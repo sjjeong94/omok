@@ -22,7 +22,9 @@ class Omok:
         return self.move(pos)
 
     def move(self, pos):
-        if self.state[pos]:
+        if self.winner:
+            return -1
+        elif self.state[pos]:
             return -1
         else:
             self.state[pos] = self.player

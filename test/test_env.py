@@ -53,4 +53,7 @@ def test_win():
         result = env(move)
         if result:
             break
+    assert result == 1
     assert env.winner == 1
+    result = env(224)
+    assert result == -1
