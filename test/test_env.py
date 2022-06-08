@@ -34,9 +34,23 @@ def test_win():
         result = env(move)
     assert result == 1
     assert env.winner == 1
+    assert len(moves) == len(env.move_history)
+    for i in range(len(moves)):
+        assert moves[i] == env.move_history[i]
+
     env.reset()
     moves = [110, 0, 100, 1, 90, 2, 80, 3, 70, 4]
     for move in moves:
         result = env(move)
     assert result == 1
     assert env.winner == 2
+    assert len(moves) == len(env.move_history)
+    for i in range(len(moves)):
+        assert moves[i] == env.move_history[i]
+
+    env.reset()
+    for move in range(15*15):
+        result = env(move)
+        if result:
+            break
+    assert env.winner == 1
