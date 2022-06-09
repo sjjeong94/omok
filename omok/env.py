@@ -37,7 +37,7 @@ class Omok:
         self.player ^= 3
 
     def get_state(self):
-        return self.state.reshape(15, 15)
+        return self.state.reshape(SIZE, SIZE)
 
     def check(self, pos):
         action_y, action_x = divmod(pos, SIZE)
@@ -142,3 +142,26 @@ class Omok:
             return 1
         else:
             return 0
+
+    def show_state(self):
+        state = self.get_state()
+        board = '+------------------------------+\n'
+        for y in range(SIZE):
+            board += '|'
+            for x in range(SIZE):
+                check = state[y, x]
+                if check == 0:
+                    board += ' -'
+                elif check == 1:
+                    board += ' O'
+                else:
+                    board += ' X'
+            board += '|\n'
+        board += '+------------------------------+\n'
+        print(board)
+
+    def get_log(self):
+        return {
+            'moves': self.move_history,
+            'winner': self.winner,
+        }
