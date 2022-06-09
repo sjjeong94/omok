@@ -21,6 +21,6 @@ jobs:
       with:
         python-version: 3.9
     - name: Install Dependencies
-      run: pip install pytest numpy
+      run: pip install pytest numpy pygame
     - name: Run Tests
       run: python -m pytest
