@@ -13,36 +13,46 @@ class Omok:
         self.reset()
 
     def reset(self):
-        self.state = np.zeros(SIZE * SIZE, np.uint8)
-        self.player = PLAYER_BLACK
-        self.winner = PLAYER_NONE
-        self.move_history = []
+        self.__state = np.zeros(SIZE * SIZE, np.uint8)
+        self.__player = PLAYER_BLACK
+        self.__winner = PLAYER_NONE
+        self.__move_history = []
+
+    def get_state(self):
+        return self.__state.reshape(SIZE, SIZE)
+
+    def get_player(self):
+        return self.__player
+
+    def get_winner(self):
+        return self.__winner
+
+    def get_move_history(self):
+        return self.__move_history
 
     def __call__(self, pos):
         return self.move(pos)
 
     def move(self, pos):
-        if self.winner:
+        if self.__winner:
             return -1
-        elif self.state[pos]:
+        elif self.__state[pos]:
             return -1
         else:
-            self.state[pos] = self.player
+            self.__state[pos] = self.__player
             result = self.check(pos)
             self.swap_player()
-            self.move_history.append(int(pos))
+            self.__move_history.append(int(pos))
             return result
 
     def swap_player(self):
-        self.player ^= 3
-
-    def get_state(self):
-        return self.state.reshape(SIZE, SIZE)
+        self.__player ^= 3
 
     def check(self, pos):
         action_y, action_x = divmod(pos, SIZE)
 
         state = self.get_state()
+        player = self.get_player()
 
         match_0 = 1
         for i in range(WIN):
@@ -51,7 +61,7 @@ class Omok:
             if(x >= SIZE):
                 break
             check = state[y, x]
-            if(check == self.player):
+            if(check == player):
                 match_0 += 1
             else:
                 break
@@ -61,7 +71,7 @@ class Omok:
             if(x < 0):
                 break
             check = state[y, x]
-            if(check == self.player):
+            if(check == player):
                 match_0 += 1
             else:
                 break
@@ -72,7 +82,7 @@ class Omok:
             if(y >= SIZE):
                 break
             check = state[y, x]
-            if(check == self.player):
+            if(check == player):
                 match_90 += 1
             else:
                 break
@@ -82,7 +92,7 @@ class Omok:
             if(y < 0):
                 break
             check = state[y, x]
-            if(check == self.player):
+            if(check == player):
                 match_90 += 1
             else:
                 break
@@ -93,7 +103,7 @@ class Omok:
             if((y < 0) or (x >= SIZE)):
                 break
             check = state[y, x]
-            if(check == self.player):
+            if(check == player):
                 match_45 += 1
             else:
                 break
@@ -103,7 +113,7 @@ class Omok:
             if((y >= SIZE) or (x < 0)):
                 break
             check = state[y, x]
-            if(check == self.player):
+            if(check == player):
                 match_45 += 1
             else:
                 break
@@ -114,7 +124,7 @@ class Omok:
             if((y >= SIZE) or (x >= SIZE)):
                 break
             check = state[y, x]
-            if(check == self.player):
+            if(check == player):
                 match_135 += 1
             else:
                 break
@@ -124,7 +134,7 @@ class Omok:
             if((y < 0) or (x < 0)):
                 break
             check = state[y, x]
-            if(check == self.player):
+            if(check == player):
                 match_135 += 1
             else:
                 break
@@ -132,13 +142,13 @@ class Omok:
         match = max(match_0, match_90, match_45, match_135)
 
         if(match > WIN):
-            self.winner = self.player ^ 3
+            self.__winner = player ^ 3
             return 1
         elif(match == WIN):
-            self.winner = self.player
+            self.__winner = player
             return 1
-        elif(len(self.move_history) == SIZE*SIZE):
-            self.winner = PLAYER_NONE
+        elif(len(self.__move_history) == SIZE*SIZE):
+            self.__winner = PLAYER_NONE
             return 1
         else:
             return 0
@@ -162,6 +172,6 @@ class Omok:
 
     def get_log(self):
         return {
-            'moves': self.move_history,
-            'winner': self.winner,
+            'moves': self.get_move_history(),
+            'winner': self.get_winner(),
         }

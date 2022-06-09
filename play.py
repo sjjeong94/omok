@@ -31,8 +31,8 @@ class pygame_omok:
         self.game_pad.fill((0, 0, 0))
         self.game_pad.blit(self.board, (0, 0))
         state = self.env.get_state()
-        for i in range(len(self.env.move_history)):
-            move = self.env.move_history[i]
+        for i in range(len(self.env.get_move_history())):
+            move = self.env.get_move_history()[i]
             y = move // 15
             x = move % 15
             stone = state[y, x]
@@ -53,15 +53,15 @@ class pygame_omok:
         if mx >= 25 and my >= 25 and mx <= 775 and my <= 775:
             x = np.clip((mx - 25)//50, 0, 14) + 1
             y = np.clip((my - 25)//50, 0, 14) + 1
-            if self.env.player == 1:
+            if self.env.get_player() == 1:
                 color = (0, 0, 0)
             else:
                 color = (255, 255, 255)
             pygame.draw.rect(self.game_pad, color, (50*x-10, 50*y-10, 20, 20))
 
     def display_move(self):
-        if len(self.env.move_history) > 0:
-            move = self.env.move_history[-1]
+        if len(self.env.get_move_history()) > 0:
+            move = self.env.get_move_history()[-1]
             x = move % 15 + 1
             y = move // 15 + 1
             color = (255, 0, 0)
@@ -69,9 +69,9 @@ class pygame_omok:
 
     def display_text(self):
         text = [
-            'Player %d' % self.env.player,
-            'Move %d' % len(self.env.move_history),
-            'Winner %d' % self.env.winner,
+            'Player %d' % self.env.get_player(),
+            'Move %d' % len(self.env.get_move_history()),
+            'Winner %d' % self.env.get_winner(),
         ]
         p = [810, 10]
         for t in text:

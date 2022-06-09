@@ -22,4 +22,4 @@ def test_cases():
         env.reset()
         for move in case['moves']:
             env(move)
-        assert env.winner == case['winner'], print("Fail -> ", case)
+        assert env.get_winner() == case['winner'], print("Fail -> ", case)
