@@ -8,7 +8,6 @@ PLAYER_WHITE = 2
 
 
 class Omok:
-
     def __init__(self):
         self.reset()
 
@@ -147,7 +146,7 @@ class Omok:
         elif(match == WIN):
             self.__winner = player
             return 1
-        elif(len(self.__move_history) == SIZE*SIZE):
+        elif(len(self.__move_history) == SIZE*SIZE - 1):  # tie
             self.__winner = PLAYER_NONE
             return 1
         else:

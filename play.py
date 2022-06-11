@@ -1,7 +1,8 @@
 import omok
 
-if __name__ == '__main__':
-    agent = omok.OmokAgent('models/a.onnx')
+
+def play():
+    agent = omok.OmokAgent()
     game = omok.OmokGame()
     while game():
         state = game.env.get_state()
@@ -9,3 +10,7 @@ if __name__ == '__main__':
         if player == 2:
             action = agent(state, player)
             result = game.env(action)
+
+
+if __name__ == '__main__':
+    play()
