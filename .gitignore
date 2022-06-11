@@ -4,5 +4,5 @@ build/
 dist/
 video/
 logs/
-omok_images/
+omok_assets/
 *.ipynb

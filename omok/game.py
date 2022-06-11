@@ -12,16 +12,17 @@ download_links = {
     "white": "https://raw.githubusercontent.com/sjjeong94/omok/main/images/stone_white.png",
 }
 
+images_path = "./omok_assets"
 images = {
-    "board": "./omok_images/board.png",
-    "black": "./omok_images/stone_black.png",
-    "white": "./omok_images/stone_white.png",
+    "board": os.path.join(images_path, "board.png"),
+    "black": os.path.join(images_path, "stone_black.png"),
+    "white": os.path.join(images_path, "stone_white.png"),
 }
 
 
 def check_images():
-    if not os.path.exists('./omok_images'):
-        os.makedirs('./omok_images', exist_ok=True)
+    if not os.path.exists(images_path):
+        os.makedirs(images_path, exist_ok=True)
     if not os.path.exists(images['board']):
         request.urlretrieve(download_links['board'], images['board'])
     if not os.path.exists(images['black']):

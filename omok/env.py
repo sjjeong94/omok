@@ -41,11 +41,11 @@ class Omok:
         else:
             self.__state[pos] = self.__player
             result = self.check(pos)
-            self.swap_player()
+            self.__swap_player()
             self.__move_history.append(int(pos))
             return result
 
-    def swap_player(self):
+    def __swap_player(self):
         self.__player ^= 3
 
     def check(self, pos):
@@ -155,7 +155,7 @@ class Omok:
 
     def show_state(self):
         state = self.get_state()
-        board = '+------------------------------+\n'
+        board = '+-------------------------------+\n'
         for y in range(SIZE):
             board += '|'
             for x in range(SIZE):
@@ -166,8 +166,8 @@ class Omok:
                     board += ' O'
                 else:
                     board += ' X'
-            board += '|\n'
-        board += '+------------------------------+\n'
+            board += ' |\n'
+        board += '+-------------------------------+\n'
         print(board)
 
     def get_log(self):
