@@ -32,7 +32,7 @@ def check_images():
 
 
 class OmokGame:
-    def __init__(self):
+    def __init__(self, agent=None):
         check_images()
         pygame.init()
         pygame.display.set_caption("OMOK")
@@ -44,6 +44,7 @@ class OmokGame:
         self.fontObj = pygame.font.Font(None, 32)
 
         self.env = Omok()
+        self.agent = agent
 
     def display(self):
         self.display_board()
@@ -126,13 +127,19 @@ class OmokGame:
                 key_button = pygame.key.get_pressed()
                 if key_button[32]:
                     self.env.reset()
-                if key_button[ord('a')] or key_button[ord('A')]:
+                if key_button[ord('l')] or key_button[ord('L')]:
                     print(self.env.get_log())
                 if key_button[ord('s')] or key_button[ord('S')]:
                     os.makedirs('logs', exist_ok=True)
                     file_name = 'logs/%d.json' % int(time.time())
                     with open(file_name, 'w') as f:
                         json.dump(self.env.get_log(), f, separators=(',', ':'))
+                if key_button[ord('a')] or key_button[ord('A')]:
+                    if self.agent is not None:
+                        state = self.env.get_state()
+                        player = self.env.get_player()
+                        action = self.agent(state, player)
+                        result = self.env(action)
 
         return running
 

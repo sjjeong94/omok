@@ -2,14 +2,9 @@ import omok
 
 
 def play():
-    agent = omok.OmokAgent()
-    game = omok.OmokGame()
+    game = omok.OmokGame(agent=omok.OmokAgent())
     while game():
-        state = game.env.get_state()
-        player = game.env.get_player()
-        if player == 2:
-            action = agent(state, player)
-            result = game.env(action)
+        pass
 
 
 if __name__ == '__main__':
