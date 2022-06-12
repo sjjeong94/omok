@@ -8,10 +8,20 @@ PLAYER_WHITE = 2
 
 
 def check_match(state, player, action_x, action_y, sx, sy):
-    match = 0
+    match = 1
     for i in range(WIN):
         y = action_y+(i+1)*sy
         x = action_x+(i+1)*sx
+        if (x < 0) or (x >= SIZE) or (y < 0) or (y >= SIZE):
+            break
+        check = state[y, x]
+        if(check == player):
+            match += 1
+        else:
+            break
+    for i in range(WIN):
+        y = action_y-(i+1)*sy
+        x = action_x-(i+1)*sx
         if (x < 0) or (x >= SIZE) or (y < 0) or (y >= SIZE):
             break
         check = state[y, x]
@@ -68,33 +78,19 @@ class Omok:
         state = self.get_state()
         player = self.get_player()
 
-        match_0 \
-            = check_match(state, player, action_x, action_y, +1, 0) \
-            + check_match(state, player, action_x, action_y, -1, 0) + 1
-
-        match_90 \
-            = check_match(state, player, action_x, action_y, 0, +1) \
-            + check_match(state, player, action_x, action_y, 0, -1) + 1
-
-        match_45 \
-            = check_match(state, player, action_x, action_y, +1, -1) \
-            + check_match(state, player, action_x, action_y, -1, +1) + 1
-
-        match_135 \
-            = check_match(state, player, action_x, action_y, +1, +1) \
-            + check_match(state, player, action_x, action_y, -1, -1) + 1
+        match_0 = check_match(state, player, action_x, action_y, +1, 0)
+        match_90 = check_match(state, player, action_x, action_y, 0, +1)
+        match_45 = check_match(state, player, action_x, action_y, +1, -1)
+        match_135 = check_match(state, player, action_x, action_y, +1, +1)
 
         check_result = [match_0, match_45, match_90, match_135]
 
         match = max(check_result)
 
-        if(match > WIN):
-            self.__winner = player ^ 3
-            return 1
-        elif(match == WIN):
+        if match >= WIN:
             self.__winner = player
             return 1
-        elif(len(self.__move_history) == SIZE*SIZE - 1):  # tie
+        elif len(self.__move_history) == SIZE*SIZE - 1:  # tie
             self.__winner = PLAYER_NONE
             return 1
         else:
