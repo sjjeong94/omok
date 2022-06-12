@@ -69,6 +69,13 @@ class Omok:
             self.__move_history.append(int(pos))
             return result
 
+    def move_back(self):
+        if len(self.__move_history):
+            self.__state[self.__move_history[-1]] = 0
+            del self.__move_history[-1]
+            self.__swap_player()
+            self.__winner = 0
+
     def __swap_player(self):
         self.__player ^= 3
 

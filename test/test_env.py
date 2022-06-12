@@ -27,6 +27,22 @@ def test_move():
     assert env(2) == 0
 
 
+def test_move_back():
+    env = omok.Omok()
+    for i in range(10):
+        env(i)
+    for i in range(7):
+        env.move_back()
+    assert env.get_move_history() == [0, 1, 2]
+
+    env.reset()
+    moves = [0, 100, 1, 90, 2, 80, 3, 70, 4]
+    for move in moves:
+        env(move)
+    env.move_back()
+    assert env.get_winner() == 0
+
+
 def test_win():
     env = omok.Omok()
     moves = [0, 100, 1, 90, 2, 80, 3, 70, 4]

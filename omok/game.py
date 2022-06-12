@@ -140,6 +140,8 @@ class OmokGame:
                         player = self.env.get_player()
                         action = self.agent(state, player)
                         result = self.env(action)
+                if key_button[ord('b')] or key_button[ord('B')]:
+                    self.env.move_back()
 
         return running
 
