@@ -7,6 +7,21 @@ PLAYER_BLACK = 1
 PLAYER_WHITE = 2
 
 
+def check_match(state, player, action_x, action_y, sx, sy):
+    match = 0
+    for i in range(WIN):
+        y = action_y+(i+1)*sy
+        x = action_x+(i+1)*sx
+        if (x < 0) or (x >= SIZE) or (y < 0) or (y >= SIZE):
+            break
+        check = state[y, x]
+        if(check == player):
+            match += 1
+        else:
+            break
+    return match
+
+
 class Omok:
     def __init__(self):
         self.reset()
@@ -53,92 +68,25 @@ class Omok:
         state = self.get_state()
         player = self.get_player()
 
-        match_0 = 1
-        for i in range(WIN):
-            y = action_y
-            x = action_x+(i+1)
-            if(x >= SIZE):
-                break
-            check = state[y, x]
-            if(check == player):
-                match_0 += 1
-            else:
-                break
-        for i in range(WIN):
-            y = action_y
-            x = action_x-(i+1)
-            if(x < 0):
-                break
-            check = state[y, x]
-            if(check == player):
-                match_0 += 1
-            else:
-                break
-        match_90 = 1
-        for i in range(WIN):
-            y = action_y+(i+1)
-            x = action_x
-            if(y >= SIZE):
-                break
-            check = state[y, x]
-            if(check == player):
-                match_90 += 1
-            else:
-                break
-        for i in range(WIN):
-            y = action_y-(i+1)
-            x = action_x
-            if(y < 0):
-                break
-            check = state[y, x]
-            if(check == player):
-                match_90 += 1
-            else:
-                break
-        match_45 = 1
-        for i in range(WIN):
-            y = action_y-(i+1)
-            x = action_x+(i+1)
-            if((y < 0) or (x >= SIZE)):
-                break
-            check = state[y, x]
-            if(check == player):
-                match_45 += 1
-            else:
-                break
-        for i in range(WIN):
-            y = action_y+(i+1)
-            x = action_x-(i+1)
-            if((y >= SIZE) or (x < 0)):
-                break
-            check = state[y, x]
-            if(check == player):
-                match_45 += 1
-            else:
-                break
-        match_135 = 1
-        for i in range(WIN):
-            y = action_y+(i+1)
-            x = action_x+(i+1)
-            if((y >= SIZE) or (x >= SIZE)):
-                break
-            check = state[y, x]
-            if(check == player):
-                match_135 += 1
-            else:
-                break
-        for i in range(WIN):
-            y = action_y-(i+1)
-            x = action_x-(i+1)
-            if((y < 0) or (x < 0)):
-                break
-            check = state[y, x]
-            if(check == player):
-                match_135 += 1
-            else:
-                break
+        match_0 \
+            = check_match(state, player, action_x, action_y, +1, 0) \
+            + check_match(state, player, action_x, action_y, -1, 0) + 1
 
-        match = max(match_0, match_90, match_45, match_135)
+        match_90 \
+            = check_match(state, player, action_x, action_y, 0, +1) \
+            + check_match(state, player, action_x, action_y, 0, -1) + 1
+
+        match_45 \
+            = check_match(state, player, action_x, action_y, +1, -1) \
+            + check_match(state, player, action_x, action_y, -1, +1) + 1
+
+        match_135 \
+            = check_match(state, player, action_x, action_y, +1, +1) \
+            + check_match(state, player, action_x, action_y, -1, -1) + 1
+
+        check_result = [match_0, match_45, match_90, match_135]
+
+        match = max(check_result)
 
         if(match > WIN):
             self.__winner = player ^ 3
