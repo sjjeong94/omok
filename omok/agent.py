@@ -1,4 +1,5 @@
 import os
+from random import random
 import numpy as np
 import onnxruntime
 from urllib import request
@@ -10,7 +11,7 @@ models_name = [
 ]
 
 
-def check_models(model_index=0):
+def check_models(model_index: int = 0):
     if not os.path.exists(models_path):
         os.makedirs(models_path, exist_ok=True)
     name = models_name[model_index]
@@ -27,12 +28,19 @@ def softmax(z):
 
 
 class OmokAgent:
-    def __init__(self, model_index=0):
-        model_path = check_models(model_index)
+    def __init__(
+        self,
+        model_path: str = None,
+        model_index: int = 0,
+        random_transpose=True,
+    ):
+        if model_path is None:
+            model_path = check_models(model_index)
         self.session = onnxruntime.InferenceSession(model_path)
+        self.random_transpose = random_transpose
 
     def __call__(self, state, player):
-        if np.random.rand() < 0.5:
+        if self.random_transpose and (np.random.rand() < 0.5):
             # Random Transpose for Diversity
             state_t = state.T
             action_t = self.inference(state_t, player)
