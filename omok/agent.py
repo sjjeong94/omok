@@ -8,6 +8,7 @@ models_link = 'https://github.com/sjjeong94/omok/raw/main/models/'
 models_path = './omok_assets'
 models_name = [
     'a.onnx',
+    'b.onnx',
 ]
 
 

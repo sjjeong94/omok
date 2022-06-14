@@ -2,7 +2,8 @@ import omok
 
 
 def play():
-    game = omok.OmokGame(agent=omok.OmokAgent())
+    agent = omok.OmokAgent(model_index=0)
+    game = omok.OmokGame(agent=agent)
     while game():
         pass
 
