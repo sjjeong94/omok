@@ -58,10 +58,10 @@ class OmokGame:
         self.game_pad.fill((0, 0, 0))
         self.game_pad.blit(self.board, (0, 0))
         state = self.env.get_state()
-        for i in range(len(self.env.get_move_history())):
-            move = self.env.get_move_history()[i]
-            y = move // 15
-            x = move % 15
+        move_history = self.env.get_move_history()
+        for i in range(len(move_history)):
+            move = move_history[i]
+            y, x = divmod(move, 15)
             stone = state[y, x]
             if stone != 0:
                 if stone == 1:
@@ -78,21 +78,21 @@ class OmokGame:
     def display_point(self):
         mx, my = pygame.mouse.get_pos()
         if mx >= 25 and my >= 25 and mx <= 775 and my <= 775:
-            x = np.clip((mx - 25)//50, 0, 14) + 1
-            y = np.clip((my - 25)//50, 0, 14) + 1
+            x = np.clip((mx - 25)//50, 0, 14)
+            y = np.clip((my - 25)//50, 0, 14)
             if self.env.get_player() == 1:
                 color = (0, 0, 0)
             else:
                 color = (255, 255, 255)
-            pygame.draw.rect(self.game_pad, color, (50*x-10, 50*y-10, 20, 20))
+            pygame.draw.rect(self.game_pad, color, (50*x+40, 50*y+40, 20, 20))
 
     def display_move(self):
-        if len(self.env.get_move_history()) > 0:
-            move = self.env.get_move_history()[-1]
-            x = move % 15 + 1
-            y = move // 15 + 1
+        move_history = self.env.get_move_history()
+        if len(move_history) > 0:
+            move = move_history[-1]
+            y, x = divmod(move, 15)
             color = (255, 0, 0)
-            pygame.draw.rect(self.game_pad, color, (50*x-10, 50*y-10, 20, 20))
+            pygame.draw.rect(self.game_pad, color, (50*x+40, 50*y+40, 20, 20))
 
     def display_text(self):
         text = [

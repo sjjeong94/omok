@@ -3,7 +3,7 @@ import omok
 
 def test_agent():
     env = omok.Omok()
-    agent = omok.OmokAgent()
+    agent = omok.OmokAgent(model_index=1)
 
     num_games = 100
     for _ in range(num_games):

@@ -1,5 +1,4 @@
 import os
-from random import random
 import numpy as np
 import onnxruntime
 from urllib import request
