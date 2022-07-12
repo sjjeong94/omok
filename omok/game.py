@@ -6,10 +6,11 @@ import pygame
 from urllib import request
 from omok import Omok
 
+url = "https://raw.githubusercontent.com/sjjeong94/omok/main/images/"
 download_links = {
-    "board": "https://raw.githubusercontent.com/sjjeong94/omok/main/images/board.png",
-    "black": "https://raw.githubusercontent.com/sjjeong94/omok/main/images/stone_black.png",
-    "white": "https://raw.githubusercontent.com/sjjeong94/omok/main/images/stone_white.png",
+    "board": url + "board.png",
+    "black": url + "stone_black.png",
+    "white": url + "stone_white.png",
 }
 
 images_path = "./omok_assets"
@@ -72,7 +73,7 @@ class OmokGame:
                 ay = 25 + y*50
                 self.game_pad.blit(src, (ax, ay))
                 t = '%d' % i
-                r = self.fontObj.render(t, True, (255, 255, 0))
+                r = self.fontObj.render(t, True, (0, 255, 255))
                 self.game_pad.blit(r, (ax+5, ay+15))
 
     def display_point(self):
@@ -91,8 +92,8 @@ class OmokGame:
         if len(move_history) > 0:
             move = move_history[-1]
             y, x = divmod(move, 15)
-            color = (255, 0, 0)
-            pygame.draw.rect(self.game_pad, color, (50*x+40, 50*y+40, 20, 20))
+            color = (0, 255, 128)
+            pygame.draw.circle(self.game_pad, color, (50*x+50, 50*y+50), 27, 2)
 
     def display_text(self):
         text = [
@@ -102,7 +103,7 @@ class OmokGame:
         ]
         p = [810, 10]
         for t in text:
-            r = self.fontObj.render(t, True, (255, 255, 0))
+            r = self.fontObj.render(t, True, (0, 255, 128))
             self.game_pad.blit(r, p)
             p[1] += 40
 
