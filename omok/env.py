@@ -117,6 +117,11 @@ class Omok:
                 else:
                     board += ' X'
             board += ' |\n'
+        p = self.get_player()
+        w = self.get_winner()
+        m = len(self.get_move_history())
+        board += '+-------------------------------+\n'
+        board += '| Player %d  Winner %d  Moves %3d |\n' % (p, w, m)
         board += '+-------------------------------+\n'
         print(board)
 

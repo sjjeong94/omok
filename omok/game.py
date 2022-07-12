@@ -143,6 +143,8 @@ class OmokGame:
                         result = self.env(action)
                 if key_button[ord('b')] or key_button[ord('B')]:
                     self.env.move_back()
+                if key_button[ord('o')] or key_button[ord('O')]:
+                    self.env.show_state()
 
         return running
 
