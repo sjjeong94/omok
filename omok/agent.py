@@ -3,6 +3,8 @@ import numpy as np
 import onnxruntime
 from urllib import request
 
+import omok.transforms
+
 models_link = 'https://github.com/sjjeong94/omok/raw/main/models/'
 models_path = './omok_assets'
 models_name = [
@@ -27,25 +29,57 @@ def softmax(z):
     return z / np.sum(z)
 
 
+class Transform:
+    def __init__(self):
+        self.hflip = omok.transforms.HorizontalFlip()
+        self.vflip = omok.transforms.VerticalFlip()
+        self.trans = omok.transforms.Transpose()
+
+    def __call__(self, state, action, code=0):
+        h = (code >> 0) & 1
+        v = (code >> 1) & 1
+        t = (code >> 2) & 1
+        if h:
+            state, action = self.hflip(state, action)
+        if v:
+            state, action = self.vflip(state, action)
+        if t:
+            state, action = self.trans(state, action)
+        return state, action
+
+    def invert(self, state, action, code=0):
+        h = (code >> 0) & 1
+        v = (code >> 1) & 1
+        t = (code >> 2) & 1
+        if t:
+            state, action = self.trans(state, action)
+        if v:
+            state, action = self.vflip(state, action)
+        if h:
+            state, action = self.hflip(state, action)
+        return state, action
+
+
 class OmokAgent:
     def __init__(
         self,
         model_path: str = None,
         model_index: int = 0,
-        random_transpose=True,
+        random_action=True,
     ):
         if model_path is None:
             model_path = check_models(model_index)
         self.session = onnxruntime.InferenceSession(model_path)
-        self.random_transpose = random_transpose
+        self.random_action = random_action
+        self.transform = Transform()
 
     def __call__(self, state, player):
-        if self.random_transpose and (np.random.rand() < 0.5):
-            # Random Transpose for Diversity
-            state_t = state.T
+        if self.random_action:
+            # Random Action for Diversity
+            code = np.random.randint(0, 8)
+            state_t, _ = self.transform(state, 0, code)
             action_t = self.inference(state_t, player)
-            y, x = divmod(action_t, 15)
-            action = x * 15 + y
+            state, action = self.transform.invert(state_t, action_t, code)
         else:
             action = self.inference(state, player)
         return action
