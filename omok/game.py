@@ -5,6 +5,7 @@ import numpy as np
 import pygame
 from urllib import request
 from omok import Omok
+from omok.version import VERSION
 
 url = "https://raw.githubusercontent.com/sjjeong94/omok/main/images/"
 download_links = {
@@ -50,7 +51,8 @@ class OmokGame:
     def display(self):
         self.display_board()
         self.display_point()
-        self.display_move()
+        self.display_moves()
+        self.display_prev()
         self.display_text()
         pygame.display.flip()
         self.clock.tick(60)
@@ -58,6 +60,8 @@ class OmokGame:
     def display_board(self):
         self.game_pad.fill((0, 0, 0))
         self.game_pad.blit(self.board, (0, 0))
+    
+    def display_moves(self):
         state = self.env.get_state()
         move_history = self.env.get_move_history()
         for i in range(len(move_history)):
@@ -87,7 +91,7 @@ class OmokGame:
                 color = (255, 255, 255)
             pygame.draw.rect(self.game_pad, color, (50*x+40, 50*y+40, 20, 20))
 
-    def display_move(self):
+    def display_prev(self):
         move_history = self.env.get_move_history()
         if len(move_history) > 0:
             move = move_history[-1]
@@ -100,12 +104,22 @@ class OmokGame:
             'Player %d' % self.env.get_player(),
             'Move %d' % len(self.env.get_move_history()),
             'Winner %d' % self.env.get_winner(),
+            '',
+            '< Key Control >',
+            '[Space] reset',
+            '[B] move back',
+            '[A] agent',
+            '',
         ]
         p = [810, 10]
         for t in text:
             r = self.fontObj.render(t, True, (0, 255, 128))
             self.game_pad.blit(r, p)
             p[1] += 40
+        
+        t = 'version %s' % VERSION
+        r = self.fontObj.render(t, True, (0, 255, 128))
+        self.game_pad.blit(r, [810, 770])
 
     def get_move(self):
         mx, my = pygame.mouse.get_pos()

@@ -1,9 +1,12 @@
+import re
 from setuptools import setup, find_packages
+
+exec(open('omok/version.py').read())
 
 setup(
     name='omok',
     packages=find_packages(),
-    version='0.0.9',
+    version=VERSION,
     license='MIT',
     description='Omok',
     author='sjjeong94',
