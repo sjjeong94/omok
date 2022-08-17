@@ -15,7 +15,7 @@ def check_match(state, player, action_x, action_y, sx, sy):
         if (x < 0) or (x >= SIZE) or (y < 0) or (y >= SIZE):
             break
         check = state[y, x]
-        if(check == player):
+        if (check == player):
             match += 1
         else:
             break
@@ -25,7 +25,7 @@ def check_match(state, player, action_x, action_y, sx, sy):
         if (x < 0) or (x >= SIZE) or (y < 0) or (y >= SIZE):
             break
         check = state[y, x]
-        if(check == player):
+        if (check == player):
             match += 1
         else:
             break
