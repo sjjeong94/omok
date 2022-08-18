@@ -71,8 +71,6 @@ def test_win():
         result = env(move)
         if result:
             break
-    env.show_state()
-    print(env.get_winner())
     assert result == 1
     assert env.get_winner() == 1
     result = env(224)

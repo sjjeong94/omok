@@ -102,8 +102,8 @@ class Omok:
             return 1
         else:
             return 0
-
-    def show_state(self):
+    
+    def __repr__(self):
         state = self.get_state()
         board = '+-------------------------------+\n'
         for y in range(SIZE):
@@ -123,7 +123,7 @@ class Omok:
         board += '+-------------------------------+\n'
         board += '| Player %d  Winner %d  Moves %3d |\n' % (p, w, m)
         board += '+-------------------------------+\n'
-        print(board)
+        return board
 
     def get_log(self):
         return {

@@ -22,7 +22,7 @@ import omok
 env = omok.Omok()
 for move in [112, 111, 96, 97, 128, 113, 80, 127, 144]:
     env(move)
-env.show_state()
+print(env)
 
 """
 Result
@@ -59,7 +59,7 @@ while True:
     player = env.get_player()
     action = agent(state, player)
     result = env(action)
-    env.show_state()
+    print(env)
     if result:
         break
 ```
