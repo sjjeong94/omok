@@ -79,7 +79,7 @@
 <main>
   <canvas id="board" width="760" height="760"></canvas>
   <aside>
-    <h1>OMOK</h1>
+    <h1 id="title">OMOK</h1>
     <dl class="status">
       <dt>Turn</dt><dd id="player"></dd>
       <dt>Moves</dt><dd id="moves"></dd>
@@ -98,11 +98,11 @@
   </aside>
 </main>
 <script>
-const SIZE = 15;
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const W = canvas.width;
-const CELL = W / SIZE;
+let SIZE = 15;
+let CELL = W / SIZE;
 const autoBox = document.getElementById('auto');
 const numbersBox = document.getElementById('numbers');
 const marksBox = document.getElementById('marks');
@@ -130,6 +130,11 @@ async function send(action, body) {
       return;
     }
     game = data;
+    if (game.size !== SIZE) {
+      SIZE = game.size;
+      CELL = W / SIZE;
+      hover = -1;
+    }
     render();
   } finally {
     busy = false;
@@ -150,7 +155,11 @@ function drawBoard() {
   }
   ctx.stroke();
   ctx.fillStyle = '#5a4420';
-  for (const [x, y] of [[3, 3], [11, 3], [7, 7], [3, 11], [11, 11]]) {
+  const e = SIZE - 4, c = (SIZE - 1) / 2;
+  const stars = SIZE === 19
+    ? [3, c, e].flatMap(x => [3, c, e].map(y => [x, y]))
+    : [[3, 3], [e, 3], [c, c], [3, e], [e, e]];
+  for (const [x, y] of stars) {
     ctx.beginPath();
     ctx.arc(center(x), center(y), 5, 0, Math.PI * 2);
     ctx.fill();
@@ -261,9 +270,14 @@ function render() {
   const name = p => p === 1
     ? '<span class="stone b"></span>Black'
     : '<span class="stone w"></span>White';
-  document.getElementById('player').innerHTML = over ? '—' : name(player);
+  const title = game.game === 'connect6' ? 'Connect6' : 'Omok';
+  document.title = title;
+  document.getElementById('title').textContent = title.toUpperCase();
+  const left = game.game === 'connect6' ? ` · ${game.stones_left} to place` : '';
+  document.getElementById('player').innerHTML = over ? '—' : name(player) + left;
   document.getElementById('moves').textContent = moves.length;
-  document.getElementById('rule').textContent = game.rule === 'renju' ? 'Renju' : 'Freestyle';
+  document.getElementById('rule').textContent =
+    {renju: 'Renju', freestyle: 'Freestyle'}[game.rule] || '6 in a row';
   document.getElementById('message').innerHTML = winner
     ? name(winner) + ' wins!'
     : over ? 'Draw' : '';

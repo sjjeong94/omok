@@ -1,5 +1,5 @@
 # Omok (오목)
-Omok은 오목 인공지능 개발을 위한 오픈소스 파이썬 라이브러리입니다.
+Omok은 오목(Omok)과 육목(Connect6) 인공지능 개발을 위한 오픈소스 파이썬 라이브러리입니다.
 
 ## Install
 
@@ -33,6 +33,7 @@ $ python -m omok
 ```bash
 $ python -m omok --port 8080 --no-browser   # 포트 지정, 브라우저 자동 실행 끄기
 $ python -m omok --no-agent                 # AI 없이 실행
+$ python -m omok --game connect6            # 육목 (AI 없음)
 ```
 
 ### Rule
@@ -116,6 +117,19 @@ print(env.get_winner())           # 0: 무승부, 1: 흑 승, 2: 백 승
 - `get_state()`, `get_move_history()`는 복사본을 반환하므로 그대로 저장해도 안전합니다.
 - 범위를 벗어난 위치(`0 <= pos < 225` 밖)는 `ValueError`가 발생합니다.
 - `move_back()`으로 되돌릴 수 있고, `copy.deepcopy(env)`로 복제할 수 있습니다.
+
+Connect6
+```python
+import omok
+
+env = omok.Connect6()   # 19x19, 6목 이상 승리
+for move in [180, 179, 161, 160, 200, 181, 199, 140, 220, 198, 162, 120]:
+    env(move)           # 흑 1개로 시작, 이후 번갈아 2개씩 착수
+print(env.get_winner())  # 1: 흑이 마지막 수로 6목 완성
+```
+
+`Connect6`는 `Omok`과 같은 인터페이스(`get_legal_mask`, `get_observation`, `is_done`, `move_back` 등)를 제공합니다.
+관측값에는 이번 턴의 마지막 착수인지 나타내는 4번째 평면이 추가됩니다.
 
 ### License
 

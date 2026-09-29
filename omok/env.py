@@ -9,22 +9,23 @@ PLAYER_WHITE = 2
 RULES = ('renju', 'freestyle')
 
 
-def check_match(state, player, action_x, action_y, sx, sy):
+def check_match(state, player, action_x, action_y, sx, sy, win=WIN):
+    size = state.shape[0]
     match = 1
-    for i in range(WIN):
+    for i in range(win):
         y = action_y+(i+1)*sy
         x = action_x+(i+1)*sx
-        if (x < 0) or (x >= SIZE) or (y < 0) or (y >= SIZE):
+        if (x < 0) or (x >= size) or (y < 0) or (y >= size):
             break
         check = state[y, x]
         if (check == player):
             match += 1
         else:
             break
-    for i in range(WIN):
+    for i in range(win):
         y = action_y-(i+1)*sy
         x = action_x-(i+1)*sx
-        if (x < 0) or (x >= SIZE) or (y < 0) or (y >= SIZE):
+        if (x < 0) or (x >= size) or (y < 0) or (y >= size):
             break
         check = state[y, x]
         if (check == player):
@@ -34,132 +35,134 @@ def check_match(state, player, action_x, action_y, sx, sy):
     return match
 
 
-class Omok:
-    def __init__(self, rule='renju'):
-        if rule not in RULES:
-            raise ValueError('rule must be one of %s' % (RULES,))
-        self.rule = rule
+class BoardGame:
+    """Two-player stone-connecting game: `win` in a row on a `size` x `size` board."""
+    size = SIZE
+    win = WIN
+
+    def __init__(self):
         self.reset()
 
     def reset(self):
-        self.__state = np.zeros(SIZE * SIZE, np.uint8)
-        self.__player = PLAYER_BLACK
-        self.__winner = PLAYER_NONE
-        self.__done = False
-        self.__move_history = []
+        self._state = np.zeros(self.size * self.size, np.uint8)
+        self._player = PLAYER_BLACK
+        self._winner = PLAYER_NONE
+        self._done = False
+        self._move_history = []
 
-    def __board(self):
-        return self.__state.reshape(SIZE, SIZE)
+    def _board(self):
+        return self._state.reshape(self.size, self.size)
+
+    def _next_player(self, num_moves):
+        """Player to move after num_moves stones have been placed."""
+        return PLAYER_BLACK if num_moves % 2 == 0 else PLAYER_WHITE
 
     def get_state(self):
-        return self.__board().copy()
+        return self._board().copy()
 
     def get_player(self):
-        return self.__player
+        return self._player
 
     def get_winner(self):
-        return self.__winner
+        return self._winner
 
     def is_done(self):
-        return self.__done
+        return self._done
 
     def get_move_history(self):
-        return list(self.__move_history)
+        return list(self._move_history)
+
+    def get_stones_left(self):
+        """Stones the current player still places in this turn."""
+        if self._done:
+            return 0
+        n = len(self._move_history)
+        k = 1
+        while self._next_player(n + k) == self._player:
+            k += 1
+        return k
 
     def is_forbidden(self, pos):
-        if self.rule != 'renju' or self.__player != PLAYER_BLACK:
-            return False
-        return renju.is_forbidden(self.__board(), pos)
+        return False
 
     def get_forbidden(self):
-        if self.rule != 'renju' or self.__player != PLAYER_BLACK:
-            return []
-        return renju.forbidden_moves(self.__board())
+        return []
 
     def get_legal_mask(self):
-        """Boolean mask of shape (225,) for the moves the current player can make."""
-        if self.__done:
-            return np.zeros(SIZE * SIZE, bool)
-        mask = self.__state == PLAYER_NONE
+        """Boolean mask of shape (size*size,) for the moves the current player can make."""
+        if self._done:
+            return np.zeros(self.size * self.size, bool)
+        mask = self._state == PLAYER_NONE
         mask[self.get_forbidden()] = False
         return mask
 
     def get_observation(self):
-        """Float32 planes of shape (3, 15, 15) from the current player's view:
+        """Float32 planes of shape (3, size, size) from the current player's view:
         own stones, opponent stones, and a constant plane that is 1 if black to play."""
-        board = self.__board()
-        player = self.__player
+        board = self._board()
+        player = self._player
         return np.stack([
             board == player,
             board == player ^ 3,
-            np.full((SIZE, SIZE), player == PLAYER_BLACK),
+            np.full(board.shape, player == PLAYER_BLACK),
         ]).astype(np.float32)
 
     def __call__(self, pos):
         return self.move(pos)
 
     def move(self, pos):
-        if not 0 <= pos < SIZE * SIZE:
-            raise ValueError('pos must be in [0, %d), got %r' % (SIZE * SIZE, pos))
-        if self.__done:
+        n = self.size * self.size
+        if not 0 <= pos < n:
+            raise ValueError('pos must be in [0, %d), got %r' % (n, pos))
+        if self._done:
             return -1
-        elif self.__state[pos]:
+        elif self._state[pos]:
             return -1
         elif self.is_forbidden(pos):
             return -1
         else:
-            self.__state[pos] = self.__player
+            self._state[pos] = self._player
             result = self.check(pos)
-            self.__swap_player()
-            self.__move_history.append(int(pos))
-            self.__done = result == 1
+            self._move_history.append(int(pos))
+            self._player = self._next_player(len(self._move_history))
+            self._done = result == 1
             return result
 
     def move_back(self):
-        if len(self.__move_history):
-            move = self.__move_history.pop(-1)
-            self.__state[move] = 0
-            self.__swap_player()
-            self.__winner = PLAYER_NONE
-            self.__done = False
-
-    def __swap_player(self):
-        self.__player ^= 3
+        if len(self._move_history):
+            move = self._move_history.pop(-1)
+            self._state[move] = 0
+            self._player = self._next_player(len(self._move_history))
+            self._winner = PLAYER_NONE
+            self._done = False
 
     def check(self, pos):
-        action_y, action_x = divmod(pos, SIZE)
+        action_y, action_x = divmod(pos, self.size)
 
-        state = self.__board()
+        state = self._board()
         player = self.get_player()
 
-        match_0 = check_match(state, player, action_x, action_y, +1, 0)
-        match_90 = check_match(state, player, action_x, action_y, 0, +1)
-        match_45 = check_match(state, player, action_x, action_y, +1, -1)
-        match_135 = check_match(state, player, action_x, action_y, +1, +1)
+        match = max(
+            check_match(state, player, action_x, action_y, sx, sy, self.win)
+            for sx, sy in ((+1, 0), (0, +1), (+1, -1), (+1, +1))
+        )
 
-        check_result = [match_0, match_45, match_90, match_135]
-
-        match = max(check_result)
-
-        if match >= WIN:
-            self.__winner = player
+        if match >= self.win:
+            self._winner = player
             return 1
-        elif len(self.__move_history) == SIZE*SIZE - 1:  # tie
-            self.__winner = PLAYER_NONE
-            return 1
-        elif (self.rule == 'renju' and player == PLAYER_WHITE
-              and not renju.has_legal_move(state)):  # black has no move
-            self.__winner = PLAYER_NONE
+        elif len(self._move_history) == self.size * self.size - 1:  # tie
+            self._winner = PLAYER_NONE
             return 1
         else:
             return 0
-    
+
     def __repr__(self):
-        state = self.__board()
-        board = '+-------------------------------+\n'
-        for y in range(SIZE):
+        state = self._board()
+        line = '+' + '-' * (self.size * 2 + 1) + '+\n'
+        board = line
+        for y in range(self.size):
             board += '|'
-            for x in range(SIZE):
+            for x in range(self.size):
                 check = state[y, x]
                 if check == 0:
                     board += ' -'
@@ -170,10 +173,11 @@ class Omok:
             board += ' |\n'
         p = self.get_player()
         w = self.get_winner()
-        m = len(self.get_move_history())
-        board += '+-------------------------------+\n'
-        board += '| Player %d  Winner %d  Moves %3d |\n' % (p, w, m)
-        board += '+-------------------------------+\n'
+        m = len(self._move_history)
+        board += line
+        board += '| Player %d  Winner %d  Moves %3d' % (p, w, m)
+        board += '  ' * (self.size - 15) + ' |\n'
+        board += line
         return board
 
     def get_log(self):
@@ -181,3 +185,49 @@ class Omok:
             'moves': self.get_move_history(),
             'winner': self.get_winner(),
         }
+
+
+class Omok(BoardGame):
+    """Five in a row on 15x15. Renju rule forbids 3-3, 4-4 and overline for black."""
+    size = SIZE
+    win = WIN
+
+    def __init__(self, rule='renju'):
+        if rule not in RULES:
+            raise ValueError('rule must be one of %s' % (RULES,))
+        self.rule = rule
+        super().__init__()
+
+    def is_forbidden(self, pos):
+        if self.rule != 'renju' or self._player != PLAYER_BLACK:
+            return False
+        return renju.is_forbidden(self._board(), pos)
+
+    def get_forbidden(self):
+        if self.rule != 'renju' or self._player != PLAYER_BLACK:
+            return []
+        return renju.forbidden_moves(self._board())
+
+    def check(self, pos):
+        result = super().check(pos)
+        if (result == 0 and self.rule == 'renju' and self._player == PLAYER_WHITE
+                and not renju.has_legal_move(self._board())):  # black has no move
+            self._winner = PLAYER_NONE
+            return 1
+        return result
+
+
+class Connect6(BoardGame):
+    """Six in a row on 19x19. Black places 1 stone first, then each turn is 2 stones."""
+    size = 19
+    win = 6
+
+    def _next_player(self, num_moves):
+        return PLAYER_BLACK if (num_moves + 1) // 2 % 2 == 0 else PLAYER_WHITE
+
+    def get_observation(self):
+        """Float32 planes of shape (4, 19, 19): own stones, opponent stones,
+        black to play, and a constant plane that is 1 on the last stone of a turn."""
+        obs = super().get_observation()
+        last = np.full((1, self.size, self.size), self.get_stones_left() == 1, np.float32)
+        return np.concatenate([obs, last])

@@ -1,7 +1,7 @@
 [project]
 name = "omok"
 dynamic = ["version"]
-description = "Omok"
+description = "A Python library for developing Omok and Connect6 AI"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

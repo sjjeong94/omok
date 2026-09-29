@@ -5,13 +5,13 @@ import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
-from omok import Omok
+from omok import Omok, Connect6
 from omok.version import VERSION
 
 
 class OmokGame:
-    def __init__(self, agent=None, rule='renju'):
-        self.env = Omok(rule=rule)
+    def __init__(self, agent=None, rule='renju', env=None):
+        self.env = Omok(rule=rule) if env is None else env
         self.agent = agent
         self.lock = threading.Lock()
 
@@ -23,7 +23,10 @@ class OmokGame:
             'done': self.env.is_done(),
             'moves': self.env.get_move_history(),
             'forbidden': self.env.get_forbidden(),
-            'rule': self.env.rule,
+            'stones_left': self.env.get_stones_left(),
+            'size': self.env.size,
+            'game': 'connect6' if isinstance(self.env, Connect6) else 'omok',
+            'rule': getattr(self.env, 'rule', None),
             'agent': self.agent is not None,
             'version': VERSION,
         }
