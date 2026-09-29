@@ -66,7 +66,7 @@ def test_win():
     for i in range(len(moves)):
         assert moves[i] == move_history[i]
 
-    env.reset()
+    env = omok.Omok(rule='freestyle')  # black makes 4-4 at (3, 3) in renju
     for move in range(15*15):
         result = env(move)
         if result:

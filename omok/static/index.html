@@ -83,6 +83,7 @@
     <dl class="status">
       <dt>Turn</dt><dd id="player"></dd>
       <dt>Moves</dt><dd id="moves"></dd>
+      <dt>Rule</dt><dd id="rule"></dd>
     </dl>
     <div id="message"></div>
     <button data-action="agent" id="agent-btn">AI move <kbd>A</kbd></button>
@@ -91,6 +92,7 @@
     <button data-action="save">Save log <kbd>S</kbd></button>
     <label><input type="checkbox" id="auto"> AI replies automatically</label>
     <label><input type="checkbox" id="numbers" checked> Show move numbers</label>
+    <label><input type="checkbox" id="marks" checked> Show forbidden moves</label>
     <footer id="version"></footer>
   </aside>
 </main>
@@ -102,6 +104,7 @@ const W = canvas.width;
 const CELL = W / SIZE;
 const autoBox = document.getElementById('auto');
 const numbersBox = document.getElementById('numbers');
+const marksBox = document.getElementById('marks');
 let game = null;
 let hover = -1;
 let busy = false;
@@ -165,11 +168,31 @@ function drawStone(x, y, player, alpha = 1) {
   ctx.globalAlpha = 1;
 }
 
+function drawForbidden(x, y) {
+  const cx = center(x), cy = center(y), r = CELL * 0.18;
+  ctx.strokeStyle = '#e53935';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx - r, cy - r); ctx.lineTo(cx + r, cy + r);
+  ctx.moveTo(cx + r, cy - r); ctx.lineTo(cx - r, cy + r);
+  ctx.stroke();
+}
+
+function isOver() {
+  const {moves, winner, forbidden} = game;
+  // in renju, black may be left with only forbidden points
+  return winner !== 0 || moves.length + forbidden.length === SIZE * SIZE;
+}
+
+function canPlay(pos) {
+  return pos >= 0 && !isOver() && game.state[pos] === 0 && !game.forbidden.includes(pos);
+}
+
 function render() {
   drawBoard();
   if (!game) return;
-  const {state, moves, player, winner} = game;
-  const over = winner !== 0 || moves.length === SIZE * SIZE;
+  const {state, moves, player, winner, forbidden} = game;
+  const over = isOver();
 
   moves.forEach((pos, i) => {
     const x = pos % SIZE, y = Math.floor(pos / SIZE);
@@ -193,15 +216,21 @@ function render() {
     ctx.stroke();
   }
 
-  if (!over && hover >= 0 && state[hover] === 0) {
+  if (!over && marksBox.checked) {
+    forbidden.forEach(pos => drawForbidden(pos % SIZE, Math.floor(pos / SIZE)));
+  }
+
+  if (canPlay(hover)) {
     drawStone(hover % SIZE, Math.floor(hover / SIZE), player, 0.45);
   }
+  canvas.style.cursor = hover >= 0 && !canPlay(hover) ? 'not-allowed' : 'pointer';
 
   const name = p => p === 1
     ? '<span class="stone b"></span>Black'
     : '<span class="stone w"></span>White';
   document.getElementById('player').innerHTML = over ? '—' : name(player);
   document.getElementById('moves').textContent = moves.length;
+  document.getElementById('rule').textContent = game.rule === 'renju' ? 'Renju' : 'Freestyle';
   document.getElementById('message').innerHTML = winner
     ? name(winner) + ' wins!'
     : over ? 'Draw' : '';
@@ -224,13 +253,14 @@ canvas.addEventListener('mousemove', e => {
 canvas.addEventListener('mouseleave', () => { hover = -1; render(); });
 canvas.addEventListener('click', e => {
   const pos = posFromEvent(e);
-  if (pos < 0 || !game || game.winner || game.state[pos]) return;
+  if (!game || !canPlay(pos)) return;
   send('move', {pos, reply: autoBox.checked && game.agent});
 });
 
 document.querySelectorAll('button[data-action]').forEach(b =>
   b.addEventListener('click', () => send(b.dataset.action)));
 numbersBox.addEventListener('change', render);
+marksBox.addEventListener('change', render);
 
 const keys = {' ': 'reset', a: 'agent', b: 'back', s: 'save'};
 document.addEventListener('keydown', e => {

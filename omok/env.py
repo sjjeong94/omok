@@ -1,10 +1,12 @@
 import numpy as np
+from omok import renju
 
 WIN = 5
 SIZE = 15
 PLAYER_NONE = 0
 PLAYER_BLACK = 1
 PLAYER_WHITE = 2
+RULES = ('renju', 'freestyle')
 
 
 def check_match(state, player, action_x, action_y, sx, sy):
@@ -33,7 +35,10 @@ def check_match(state, player, action_x, action_y, sx, sy):
 
 
 class Omok:
-    def __init__(self):
+    def __init__(self, rule='renju'):
+        if rule not in RULES:
+            raise ValueError('rule must be one of %s' % (RULES,))
+        self.rule = rule
         self.reset()
 
     def reset(self):
@@ -54,6 +59,16 @@ class Omok:
     def get_move_history(self):
         return self.__move_history
 
+    def is_forbidden(self, pos):
+        if self.rule != 'renju' or self.__player != PLAYER_BLACK:
+            return False
+        return renju.is_forbidden(self.get_state(), pos)
+
+    def get_forbidden(self):
+        if self.rule != 'renju' or self.__player != PLAYER_BLACK:
+            return []
+        return renju.forbidden_moves(self.get_state())
+
     def __call__(self, pos):
         return self.move(pos)
 
@@ -61,6 +76,8 @@ class Omok:
         if self.__winner:
             return -1
         elif self.__state[pos]:
+            return -1
+        elif self.is_forbidden(pos):
             return -1
         else:
             self.__state[pos] = self.__player
@@ -98,6 +115,10 @@ class Omok:
             self.__winner = player
             return 1
         elif len(self.__move_history) == SIZE*SIZE - 1:  # tie
+            self.__winner = PLAYER_NONE
+            return 1
+        elif (self.rule == 'renju' and player == PLAYER_WHITE
+              and not renju.has_legal_move(state)):  # black has no move
             self.__winner = PLAYER_NONE
             return 1
         else:

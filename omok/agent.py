@@ -4,6 +4,7 @@ import onnxruntime
 from urllib import request
 
 import omok.transforms
+from omok import renju
 
 models_link = 'https://github.com/sjjeong94/omok/raw/main/models/'
 models_path = './omok_assets'
@@ -60,6 +61,7 @@ class OmokAgent:
         model_index: int = 0,
         random_transform=True,
         sampling=False,
+        rule='renju',
     ):
         if model_path is None:
             model_path = check_models(model_index)
@@ -67,6 +69,7 @@ class OmokAgent:
         self.transform = Transform()
         self.random_transform = random_transform
         self.sampling = sampling
+        self.rule = rule
 
     def __call__(self, state, player):
         if self.random_transform:
@@ -96,6 +99,8 @@ class OmokAgent:
         outs = self.session.run(None, {'input': x})
         out = softmax(outs[0].squeeze())
         out[(state.reshape(-1) != 0)] = 0  # masking
+        if self.rule == 'renju' and player == 1:
+            out[renju.forbidden_moves(state)] = 0
 
         if self.sampling:
             action = self.sample(out)

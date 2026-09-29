@@ -10,8 +10,8 @@ from omok.version import VERSION
 
 
 class OmokGame:
-    def __init__(self, agent=None):
-        self.env = Omok()
+    def __init__(self, agent=None, rule='renju'):
+        self.env = Omok(rule=rule)
         self.agent = agent
         self.lock = threading.Lock()
 
@@ -21,6 +21,8 @@ class OmokGame:
             'player': self.env.get_player(),
             'winner': self.env.get_winner(),
             'moves': self.env.get_move_history(),
+            'forbidden': self.env.get_forbidden(),
+            'rule': self.env.rule,
             'agent': self.agent is not None,
             'version': VERSION,
         }

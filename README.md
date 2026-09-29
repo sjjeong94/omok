@@ -34,6 +34,21 @@ $ python -m omok --port 8080 --no-browser   # 포트 지정, 브라우저 자동
 $ python -m omok --no-agent                 # AI 없이 실행
 ```
 
+### Rule
+
+기본 규칙은 렌주룰(Renju)입니다. 흑은 3-3, 4-4, 장목(6목 이상)에 둘 수 없으며 정확히 5목을 만들어야 승리합니다.
+금수와 5목이 동시에 만들어지면 5목이 우선합니다. 백은 제약이 없으며 장목도 승리로 인정됩니다.
+웹 UI에서는 흑 차례에 금수 자리가 빨간 × 로 표시됩니다.
+
+```bash
+$ python -m omok --rule freestyle           # 금수 없는 자유룰
+```
+
+```python
+env = omok.Omok(rule='freestyle')
+env.get_forbidden()   # 현재 흑의 금수 위치 목록 (렌주룰, 흑 차례에만)
+```
+
 Environment
 ```python
 import omok
