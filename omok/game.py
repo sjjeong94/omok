@@ -1,173 +1,119 @@
 import os
 import time
 import json
-import numpy as np
-import pygame
-from urllib import request
+import threading
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib import resources
 from omok import Omok
 from omok.version import VERSION
-
-url = "https://raw.githubusercontent.com/sjjeong94/omok/main/images/"
-download_links = {
-    "board": url + "board.png",
-    "black": url + "stone_black.png",
-    "white": url + "stone_white.png",
-}
-
-images_path = "./omok_assets"
-images = {
-    "board": os.path.join(images_path, "board.png"),
-    "black": os.path.join(images_path, "stone_black.png"),
-    "white": os.path.join(images_path, "stone_white.png"),
-}
-
-
-def check_images():
-    if not os.path.exists(images_path):
-        os.makedirs(images_path, exist_ok=True)
-    if not os.path.exists(images['board']):
-        request.urlretrieve(download_links['board'], images['board'])
-    if not os.path.exists(images['black']):
-        request.urlretrieve(download_links['black'], images['black'])
-    if not os.path.exists(images['white']):
-        request.urlretrieve(download_links['white'], images['white'])
 
 
 class OmokGame:
     def __init__(self, agent=None):
-        check_images()
-        pygame.init()
-        pygame.display.set_caption("OMOK")
-        self.game_pad = pygame.display.set_mode((1100, 800))
-        self.board = pygame.image.load(images['board'])
-        self.stone_black = pygame.image.load(images['black'])
-        self.stone_white = pygame.image.load(images['white'])
-        self.clock = pygame.time.Clock()
-        self.fontObj = pygame.font.Font(None, 32)
-
         self.env = Omok()
         self.agent = agent
+        self.lock = threading.Lock()
 
-    def display(self):
-        self.display_board()
-        self.display_point()
-        self.display_moves()
-        self.display_prev()
-        self.display_text()
-        pygame.display.flip()
-        self.clock.tick(60)
+    def get_status(self):
+        return {
+            'state': self.env.get_state().reshape(-1).tolist(),
+            'player': self.env.get_player(),
+            'winner': self.env.get_winner(),
+            'moves': self.env.get_move_history(),
+            'agent': self.agent is not None,
+            'version': VERSION,
+        }
 
-    def display_board(self):
-        self.game_pad.fill((0, 0, 0))
-        self.game_pad.blit(self.board, (0, 0))
-    
-    def display_moves(self):
-        state = self.env.get_state()
-        move_history = self.env.get_move_history()
-        for i in range(len(move_history)):
-            move = move_history[i]
-            y, x = divmod(move, 15)
-            stone = state[y, x]
-            if stone != 0:
-                if stone == 1:
-                    src = self.stone_black
-                else:
-                    src = self.stone_white
-                ax = 25 + x*50
-                ay = 25 + y*50
-                self.game_pad.blit(src, (ax, ay))
-                t = '%d' % i
-                r = self.fontObj.render(t, True, (0, 255, 255))
-                self.game_pad.blit(r, (ax+5, ay+15))
+    def move(self, pos):
+        pos = int(pos)
+        if 0 <= pos < self.env.get_state().size:
+            self.env.move(pos)
 
-    def display_point(self):
-        mx, my = pygame.mouse.get_pos()
-        if mx >= 25 and my >= 25 and mx <= 775 and my <= 775:
-            x = np.clip((mx - 25)//50, 0, 14)
-            y = np.clip((my - 25)//50, 0, 14)
-            if self.env.get_player() == 1:
-                color = (0, 0, 0)
+    def agent_move(self):
+        if self.agent is not None and not self.env.get_winner():
+            state = self.env.get_state()
+            player = self.env.get_player()
+            self.env(self.agent(state, player))
+
+    def save_log(self):
+        os.makedirs('logs', exist_ok=True)
+        file_name = 'logs/%d.json' % int(time.time())
+        with open(file_name, 'w') as f:
+            json.dump(self.env.get_log(), f, separators=(',', ':'))
+        return file_name
+
+    def handle(self, action, body):
+        with self.lock:
+            if action == 'state':
+                pass
+            elif action == 'move':
+                self.move(body['pos'])
+                if body.get('reply'):
+                    self.agent_move()
+            elif action == 'agent':
+                self.agent_move()
+            elif action == 'back':
+                self.env.move_back()
+            elif action == 'reset':
+                self.env.reset()
+            elif action == 'save':
+                return {'file': self.save_log()}
             else:
-                color = (255, 255, 255)
-            pygame.draw.rect(self.game_pad, color, (50*x+40, 50*y+40, 20, 20))
+                return None
+            return self.get_status()
 
-    def display_prev(self):
-        move_history = self.env.get_move_history()
-        if len(move_history) > 0:
-            move = move_history[-1]
-            y, x = divmod(move, 15)
-            color = (0, 255, 128)
-            pygame.draw.circle(self.game_pad, color, (50*x+50, 50*y+50), 27, 2)
+    def make_handler(self):
+        game = self
+        page = resources.files('omok').joinpath('static/index.html').read_bytes()
 
-    def display_text(self):
-        text = [
-            'Player %d' % self.env.get_player(),
-            'Move %d' % len(self.env.get_move_history()),
-            'Winner %d' % self.env.get_winner(),
-            '',
-            '< Key Control >',
-            '[Space] reset',
-            '[B] move back',
-            '[A] agent',
-            '',
-        ]
-        p = [810, 10]
-        for t in text:
-            r = self.fontObj.render(t, True, (0, 255, 128))
-            self.game_pad.blit(r, p)
-            p[1] += 40
-        
-        t = 'version %s' % VERSION
-        r = self.fontObj.render(t, True, (0, 255, 128))
-        self.game_pad.blit(r, [810, 770])
+        class Handler(BaseHTTPRequestHandler):
+            def send(self, code, data, content_type):
+                self.send_response(code)
+                self.send_header('Content-Type', content_type)
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
 
-    def get_move(self):
-        mx, my = pygame.mouse.get_pos()
-        if mx >= 25 and my >= 25 and mx <= 775 and my <= 775:
-            x = np.clip((mx - 25)//50, 0, 14)
-            y = np.clip((my - 25)//50, 0, 14)
-            action = y*15 + x
-            self.env.move(action)
+            def send_json(self, obj):
+                if obj is None:
+                    self.send(404, b'{}', 'application/json')
+                else:
+                    self.send(200, json.dumps(obj).encode(), 'application/json')
 
-    def process_event(self):
-        running = True
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                mouse_button = pygame.mouse.get_pressed()
-                if mouse_button[0]:
-                    self.get_move()
-            if event.type == pygame.KEYDOWN:
-                key_button = pygame.key.get_pressed()
-                if key_button[32]:
-                    self.env.reset()
-                if key_button[ord('l')] or key_button[ord('L')]:
-                    print(self.env.get_log())
-                if key_button[ord('s')] or key_button[ord('S')]:
-                    os.makedirs('logs', exist_ok=True)
-                    file_name = 'logs/%d.json' % int(time.time())
-                    with open(file_name, 'w') as f:
-                        json.dump(self.env.get_log(), f, separators=(',', ':'))
-                if key_button[ord('a')] or key_button[ord('A')]:
-                    if self.agent is not None:
-                        state = self.env.get_state()
-                        player = self.env.get_player()
-                        action = self.agent(state, player)
-                        result = self.env(action)
-                if key_button[ord('b')] or key_button[ord('B')]:
-                    self.env.move_back()
-                if key_button[ord('o')] or key_button[ord('O')]:
-                    self.env.show_state()
+            def do_GET(self):
+                if self.path in ('/', '/index.html'):
+                    self.send(200, page, 'text/html; charset=utf-8')
+                elif self.path == '/api/state':
+                    self.send_json(game.handle('state', {}))
+                else:
+                    self.send(404, b'Not Found', 'text/plain')
 
-        return running
+            def do_POST(self):
+                if not self.path.startswith('/api/'):
+                    return self.send(404, b'Not Found', 'text/plain')
+                length = int(self.headers.get('Content-Length') or 0)
+                try:
+                    body = json.loads(self.rfile.read(length) or b'{}')
+                    result = game.handle(self.path[len('/api/'):], body)
+                except (ValueError, KeyError, TypeError):
+                    return self.send(400, b'{}', 'application/json')
+                self.send_json(result)
 
-    def __call__(self):
-        return self.call()
+            def log_message(self, format, *args):
+                pass
 
-    def call(self):
-        self.display()
-        return self.process_event()
+        return Handler
 
-    def __del__(self):
-        pygame.quit()
+    def run(self, host='127.0.0.1', port=8000, open_browser=True):
+        server = ThreadingHTTPServer((host, port), self.make_handler())
+        url = 'http://%s:%d' % (host, server.server_address[1])
+        print('Omok %s running at %s (Ctrl+C to quit)' % (VERSION, url))
+        if open_browser:
+            webbrowser.open(url)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.server_close()

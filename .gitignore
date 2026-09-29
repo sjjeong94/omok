@@ -6,3 +6,4 @@ video/
 logs/
 omok_assets/
 *.ipynb
+.venv/

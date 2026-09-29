@@ -7,12 +7,31 @@ Omok은 오목 인공지능 개발을 위한 오픈소스 파이썬 라이브러
 $ pip install omok
 ```
 
+## Development
+
+[uv](https://docs.astral.sh/uv/)를 사용합니다.
+
+```bash
+$ uv sync            # 가상환경 생성 및 의존성 설치
+$ uv run pytest      # 테스트
+$ uv run python -m omok
+$ uv build           # 배포 패키지 빌드
+```
+
 
 ## Usage
 
 Play
 ```bash
 $ python -m omok
+```
+
+웹 서버가 `http://127.0.0.1:8000` 에서 실행되고 브라우저가 자동으로 열립니다.
+보드를 클릭해 착수하고, 단축키 `A`(AI 착수), `B`(무르기), `Space`(리셋), `S`(기보 저장)를 사용할 수 있습니다.
+
+```bash
+$ python -m omok --port 8080 --no-browser   # 포트 지정, 브라우저 자동 실행 끄기
+$ python -m omok --no-agent                 # AI 없이 실행
 ```
 
 Environment

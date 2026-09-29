@@ -15,12 +15,12 @@ jobs:
 
     steps:
     - name: Checkout Code
-      uses: actions/checkout@v2
-    - name: Set up Python 3.9
-      uses: actions/setup-python@v2
+      uses: actions/checkout@v4
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v6
       with:
-        python-version: 3.9
+        python-version: "3.11"
     - name: Install Dependencies
-      run: pip install pytest numpy pygame onnxruntime
+      run: uv sync --locked
     - name: Run Tests
-      run: python -m pytest
+      run: uv run pytest

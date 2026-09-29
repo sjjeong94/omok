@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Omok</title>
+<style>
+  :root {
+    --bg: #1d1f21;
+    --panel: #282a2e;
+    --text: #e6e6e6;
+    --muted: #9a9ea5;
+    --accent: #3ddc84;
+    --wood: #dcb35c;
+    --line: #5a4420;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  main {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  canvas {
+    width: min(92vw, 80vh, 760px);
+    aspect-ratio: 1;
+    border-radius: 6px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, .5);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  aside {
+    width: 240px;
+    background: var(--panel);
+    border-radius: 8px;
+    padding: 20px;
+  }
+  h1 { margin: 0 0 16px; font-size: 22px; letter-spacing: .08em; }
+  .status { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin-bottom: 16px; }
+  .status dt { color: var(--muted); }
+  .status dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .stone { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -1px; margin-right: 6px; }
+  .stone.b { background: #111; border: 1px solid #555; }
+  .stone.w { background: #f4f4f4; }
+  #message { min-height: 1.4em; color: var(--accent); font-weight: 600; margin-bottom: 12px; }
+  button {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    margin-bottom: 8px;
+    padding: 9px 12px;
+    background: #373b41;
+    color: var(--text);
+    border: 0;
+    border-radius: 6px;
+    font: inherit;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #43474e; }
+  button:disabled { opacity: .4; cursor: default; }
+  kbd { color: var(--muted); font-family: ui-monospace, monospace; font-size: 12px; }
+  label { display: flex; gap: 8px; align-items: center; margin: 14px 0 0; color: var(--muted); cursor: pointer; }
+  footer { margin-top: 16px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <canvas id="board" width="760" height="760"></canvas>
+  <aside>
+    <h1>OMOK</h1>
+    <dl class="status">
+      <dt>Turn</dt><dd id="player"></dd>
+      <dt>Moves</dt><dd id="moves"></dd>
+    </dl>
+    <div id="message"></div>
+    <button data-action="agent" id="agent-btn">AI move <kbd>A</kbd></button>
+    <button data-action="back">Move back <kbd>B</kbd></button>
+    <button data-action="reset">Reset <kbd>Space</kbd></button>
+    <button data-action="save">Save log <kbd>S</kbd></button>
+    <label><input type="checkbox" id="auto"> AI replies automatically</label>
+    <label><input type="checkbox" id="numbers" checked> Show move numbers</label>
+    <footer id="version"></footer>
+  </aside>
+</main>
+<script>
+const SIZE = 15;
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+const W = canvas.width;
+const CELL = W / SIZE;
+const autoBox = document.getElementById('auto');
+const numbersBox = document.getElementById('numbers');
+let game = null;
+let hover = -1;
+let busy = false;
+
+async function api(action, body) {
+  const res = await fetch('/api/' + action, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body || {}),
+  });
+  return res.json();
+}
+
+async function send(action, body) {
+  if (busy) return;
+  busy = true;
+  try {
+    const data = await api(action, body);
+    if (action === 'save') {
+      document.getElementById('message').textContent = 'Saved ' + data.file;
+      return;
+    }
+    game = data;
+    render();
+  } finally {
+    busy = false;
+  }
+}
+
+const center = i => CELL / 2 + i * CELL;
+
+function drawBoard() {
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--wood');
+  ctx.fillRect(0, 0, W, W);
+  ctx.strokeStyle = '#5a4420';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < SIZE; i++) {
+    ctx.moveTo(center(0), center(i)); ctx.lineTo(center(SIZE - 1), center(i));
+    ctx.moveTo(center(i), center(0)); ctx.lineTo(center(i), center(SIZE - 1));
+  }
+  ctx.stroke();
+  ctx.fillStyle = '#5a4420';
+  for (const [x, y] of [[3, 3], [11, 3], [7, 7], [3, 11], [11, 11]]) {
+    ctx.beginPath();
+    ctx.arc(center(x), center(y), 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawStone(x, y, player, alpha = 1) {
+  const cx = center(x), cy = center(y), r = CELL * 0.45;
+  const g = ctx.createRadialGradient(cx - r / 3, cy - r / 3, r / 8, cx, cy, r);
+  if (player === 1) { g.addColorStop(0, '#666'); g.addColorStop(1, '#0a0a0a'); }
+  else { g.addColorStop(0, '#fff'); g.addColorStop(1, '#cfcfcf'); }
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function render() {
+  drawBoard();
+  if (!game) return;
+  const {state, moves, player, winner} = game;
+  const over = winner !== 0 || moves.length === SIZE * SIZE;
+
+  moves.forEach((pos, i) => {
+    const x = pos % SIZE, y = Math.floor(pos / SIZE);
+    const p = state[pos];
+    drawStone(x, y, p);
+    if (numbersBox.checked) {
+      ctx.fillStyle = p === 1 ? '#fff' : '#111';
+      ctx.font = `${Math.round(CELL * 0.32)}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(i + 1, center(x), center(y) + 1);
+    }
+  });
+
+  if (moves.length) {
+    const last = moves[moves.length - 1];
+    ctx.strokeStyle = '#e53935';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(center(last % SIZE), center(Math.floor(last / SIZE)), CELL * 0.5, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  if (!over && hover >= 0 && state[hover] === 0) {
+    drawStone(hover % SIZE, Math.floor(hover / SIZE), player, 0.45);
+  }
+
+  const name = p => p === 1
+    ? '<span class="stone b"></span>Black'
+    : '<span class="stone w"></span>White';
+  document.getElementById('player').innerHTML = over ? '—' : name(player);
+  document.getElementById('moves').textContent = moves.length;
+  document.getElementById('message').innerHTML = winner
+    ? name(winner) + ' wins!'
+    : over ? 'Draw' : '';
+  document.getElementById('agent-btn').disabled = !game.agent || over;
+  autoBox.disabled = !game.agent;
+  document.getElementById('version').textContent = 'version ' + game.version;
+}
+
+function posFromEvent(e) {
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX - rect.left) / rect.width * SIZE);
+  const y = Math.floor((e.clientY - rect.top) / rect.height * SIZE);
+  return x >= 0 && x < SIZE && y >= 0 && y < SIZE ? y * SIZE + x : -1;
+}
+
+canvas.addEventListener('mousemove', e => {
+  const pos = posFromEvent(e);
+  if (pos !== hover) { hover = pos; render(); }
+});
+canvas.addEventListener('mouseleave', () => { hover = -1; render(); });
+canvas.addEventListener('click', e => {
+  const pos = posFromEvent(e);
+  if (pos < 0 || !game || game.winner || game.state[pos]) return;
+  send('move', {pos, reply: autoBox.checked && game.agent});
+});
+
+document.querySelectorAll('button[data-action]').forEach(b =>
+  b.addEventListener('click', () => send(b.dataset.action)));
+numbersBox.addEventListener('change', render);
+
+const keys = {' ': 'reset', a: 'agent', b: 'back', s: 'save'};
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const action = keys[e.key.toLowerCase()];
+  if (!action) return;
+  e.preventDefault();
+  if (action === 'agent' && (!game || !game.agent)) return;
+  send(action);
+});
+
+send('state');
+</script>
+</body>
+</html>

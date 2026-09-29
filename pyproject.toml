@@ -1,0 +1,33 @@
+[project]
+name = "omok"
+dynamic = ["version"]
+description = "Omok"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "sjjeong94", email = "sjjeong94@gmail.com" }]
+requires-python = ">=3.11"
+dependencies = ["numpy", "onnxruntime"]
+
+[project.urls]
+Homepage = "https://github.com/sjjeong94/omok"
+
+[dependency-groups]
+dev = ["pytest"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "omok/version.py"
+pattern = "VERSION = \"(?P<version>[^\"]+)\""
+
+[tool.hatch.build.targets.wheel]
+packages = ["omok"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/omok", "/test", "/README.md", "/LICENSE"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
