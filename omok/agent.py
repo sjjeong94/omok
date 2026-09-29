@@ -91,16 +91,34 @@ class OmokAgent:
                 break
         return i
 
-    def inference(self, state, player):
+    def predict(self, state, player):
         opponent = player ^ 3
         board = np.int8(state == player) - np.int8(state == opponent)
         x = board.astype(np.float32)
         x = np.reshape(x, (1, 1, 15, 15))
         outs = self.session.run(None, {'input': x})
-        out = softmax(outs[0].squeeze())
-        out[(state.reshape(-1) != 0)] = 0  # masking
+        return softmax(outs[0].squeeze())
+
+    def mask(self, out, state, player):
+        out[(state.reshape(-1) != 0)] = 0
         if self.rule == 'renju' and player == 1:
             out[renju.forbidden_moves(state)] = 0
+        return out
+
+    def get_probs(self, state, player):
+        """Legal move probabilities averaged over the 8 board symmetries."""
+        probs = np.zeros((15, 15), np.float32)
+        for code in range(8):
+            state_t, _ = self.transform(state, 0, code)
+            out = self.predict(state_t, player).reshape(15, 15)
+            out, _ = self.transform(out, 0, code, True)
+            probs += out
+        probs = self.mask(probs.reshape(-1), state, player)
+        total = probs.sum()
+        return probs / total if total > 0 else probs
+
+    def inference(self, state, player):
+        out = self.mask(self.predict(state, player), state, player)
 
         if self.sampling:
             action = self.sample(out)

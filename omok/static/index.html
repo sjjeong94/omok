@@ -93,6 +93,7 @@
     <label><input type="checkbox" id="auto"> AI replies automatically</label>
     <label><input type="checkbox" id="numbers" checked> Show move numbers</label>
     <label><input type="checkbox" id="marks" checked> Show forbidden moves</label>
+    <label><input type="checkbox" id="probs"> Show AI probabilities <kbd>P</kbd></label>
     <footer id="version"></footer>
   </aside>
 </main>
@@ -105,6 +106,7 @@ const CELL = W / SIZE;
 const autoBox = document.getElementById('auto');
 const numbersBox = document.getElementById('numbers');
 const marksBox = document.getElementById('marks');
+const probsBox = document.getElementById('probs');
 let game = null;
 let hover = -1;
 let busy = false;
@@ -113,7 +115,7 @@ async function api(action, body) {
   const res = await fetch('/api/' + action, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(body || {}),
+    body: JSON.stringify({...body, probs: probsBox.checked}),
   });
   return res.json();
 }
@@ -178,6 +180,35 @@ function drawForbidden(x, y) {
   ctx.stroke();
 }
 
+function drawProbs(probs) {
+  const max = Math.max(...probs);
+  if (!(max > 0)) return;
+  const best = probs.indexOf(max);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `600 ${Math.round(CELL * 0.3)}px system-ui, sans-serif`;
+  probs.forEach((p, pos) => {
+    if (p < 0.001) return;
+    const t = p / max;
+    const cx = center(pos % SIZE), cy = center(Math.floor(pos / SIZE));
+    ctx.fillStyle = `rgba(30, 136, 229, ${0.2 + 0.7 * t})`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, CELL * (0.2 + 0.22 * Math.sqrt(t)), 0, Math.PI * 2);
+    ctx.fill();
+    if (pos === best) {
+      ctx.strokeStyle = '#0d47a1';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, CELL * 0.45, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (p >= 0.01) {
+      ctx.fillStyle = t > 0.4 ? '#fff' : '#0d2a4a';
+      ctx.fillText(Math.round(p * 100), cx, cy + 1);
+    }
+  });
+}
+
 function isOver() {
   const {moves, winner, forbidden} = game;
   // in renju, black may be left with only forbidden points
@@ -216,6 +247,10 @@ function render() {
     ctx.stroke();
   }
 
+  if (!over && probsBox.checked && game.probs) {
+    drawProbs(game.probs);
+  }
+
   if (!over && marksBox.checked) {
     forbidden.forEach(pos => drawForbidden(pos % SIZE, Math.floor(pos / SIZE)));
   }
@@ -236,6 +271,7 @@ function render() {
     : over ? 'Draw' : '';
   document.getElementById('agent-btn').disabled = !game.agent || over;
   autoBox.disabled = !game.agent;
+  probsBox.disabled = !game.agent;
   document.getElementById('version').textContent = 'version ' + game.version;
 }
 
@@ -261,11 +297,17 @@ document.querySelectorAll('button[data-action]').forEach(b =>
   b.addEventListener('click', () => send(b.dataset.action)));
 numbersBox.addEventListener('change', render);
 marksBox.addEventListener('change', render);
+probsBox.addEventListener('change', () => probsBox.checked ? send('state') : render());
 
 const keys = {' ': 'reset', a: 'agent', b: 'back', s: 'save'};
 document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const action = keys[e.key.toLowerCase()];
+  if (e.key.toLowerCase() === 'p' && game && game.agent) {
+    probsBox.checked = !probsBox.checked;
+    probsBox.dispatchEvent(new Event('change'));
+    return;
+  }
   if (!action) return;
   e.preventDefault();
   if (action === 'agent' && (!game || !game.agent)) return;

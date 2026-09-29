@@ -15,8 +15,8 @@ class OmokGame:
         self.agent = agent
         self.lock = threading.Lock()
 
-    def get_status(self):
-        return {
+    def get_status(self, probs=False):
+        status = {
             'state': self.env.get_state().reshape(-1).tolist(),
             'player': self.env.get_player(),
             'winner': self.env.get_winner(),
@@ -26,6 +26,10 @@ class OmokGame:
             'agent': self.agent is not None,
             'version': VERSION,
         }
+        if probs and self.agent is not None and not self.env.get_winner():
+            status['probs'] = self.agent.get_probs(
+                self.env.get_state(), self.env.get_player()).round(4).tolist()
+        return status
 
     def move(self, pos):
         pos = int(pos)
@@ -63,7 +67,7 @@ class OmokGame:
                 return {'file': self.save_log()}
             else:
                 return None
-            return self.get_status()
+            return self.get_status(probs=body.get('probs'))
 
     def make_handler(self):
         game = self
