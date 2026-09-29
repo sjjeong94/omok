@@ -93,11 +93,29 @@ while True:
     state = env.get_state()
     player = env.get_player()
     action = agent(state, player)
-    result = env(action)
+    env(action)
     print(env)
-    if result:
+    if env.is_done():
         break
 ```
+
+Reinforcement Learning
+```python
+import numpy as np
+import omok
+
+env = omok.Omok()
+while not env.is_done():
+    obs = env.get_observation()   # (3, 15, 15) float32: 내 돌, 상대 돌, 흑 차례 여부
+    mask = env.get_legal_mask()   # (225,) bool: 둘 수 있는 자리 (렌주 금수 제외)
+    action = np.random.choice(np.flatnonzero(mask))
+    env(action)                   # 0: 진행, 1: 종료, -1: 둘 수 없는 자리
+print(env.get_winner())           # 0: 무승부, 1: 흑 승, 2: 백 승
+```
+
+- `get_state()`, `get_move_history()`는 복사본을 반환하므로 그대로 저장해도 안전합니다.
+- 범위를 벗어난 위치(`0 <= pos < 225` 밖)는 `ValueError`가 발생합니다.
+- `move_back()`으로 되돌릴 수 있고, `copy.deepcopy(env)`로 복제할 수 있습니다.
 
 ### License
 

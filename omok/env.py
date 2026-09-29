@@ -45,10 +45,14 @@ class Omok:
         self.__state = np.zeros(SIZE * SIZE, np.uint8)
         self.__player = PLAYER_BLACK
         self.__winner = PLAYER_NONE
+        self.__done = False
         self.__move_history = []
 
-    def get_state(self):
+    def __board(self):
         return self.__state.reshape(SIZE, SIZE)
+
+    def get_state(self):
+        return self.__board().copy()
 
     def get_player(self):
         return self.__player
@@ -56,24 +60,48 @@ class Omok:
     def get_winner(self):
         return self.__winner
 
+    def is_done(self):
+        return self.__done
+
     def get_move_history(self):
-        return self.__move_history
+        return list(self.__move_history)
 
     def is_forbidden(self, pos):
         if self.rule != 'renju' or self.__player != PLAYER_BLACK:
             return False
-        return renju.is_forbidden(self.get_state(), pos)
+        return renju.is_forbidden(self.__board(), pos)
 
     def get_forbidden(self):
         if self.rule != 'renju' or self.__player != PLAYER_BLACK:
             return []
-        return renju.forbidden_moves(self.get_state())
+        return renju.forbidden_moves(self.__board())
+
+    def get_legal_mask(self):
+        """Boolean mask of shape (225,) for the moves the current player can make."""
+        if self.__done:
+            return np.zeros(SIZE * SIZE, bool)
+        mask = self.__state == PLAYER_NONE
+        mask[self.get_forbidden()] = False
+        return mask
+
+    def get_observation(self):
+        """Float32 planes of shape (3, 15, 15) from the current player's view:
+        own stones, opponent stones, and a constant plane that is 1 if black to play."""
+        board = self.__board()
+        player = self.__player
+        return np.stack([
+            board == player,
+            board == player ^ 3,
+            np.full((SIZE, SIZE), player == PLAYER_BLACK),
+        ]).astype(np.float32)
 
     def __call__(self, pos):
         return self.move(pos)
 
     def move(self, pos):
-        if self.__winner:
+        if not 0 <= pos < SIZE * SIZE:
+            raise ValueError('pos must be in [0, %d), got %r' % (SIZE * SIZE, pos))
+        if self.__done:
             return -1
         elif self.__state[pos]:
             return -1
@@ -84,6 +112,7 @@ class Omok:
             result = self.check(pos)
             self.__swap_player()
             self.__move_history.append(int(pos))
+            self.__done = result == 1
             return result
 
     def move_back(self):
@@ -91,7 +120,8 @@ class Omok:
             move = self.__move_history.pop(-1)
             self.__state[move] = 0
             self.__swap_player()
-            self.__winner = 0
+            self.__winner = PLAYER_NONE
+            self.__done = False
 
     def __swap_player(self):
         self.__player ^= 3
@@ -99,7 +129,7 @@ class Omok:
     def check(self, pos):
         action_y, action_x = divmod(pos, SIZE)
 
-        state = self.get_state()
+        state = self.__board()
         player = self.get_player()
 
         match_0 = check_match(state, player, action_x, action_y, +1, 0)
@@ -125,7 +155,7 @@ class Omok:
             return 0
     
     def __repr__(self):
-        state = self.get_state()
+        state = self.__board()
         board = '+-------------------------------+\n'
         for y in range(SIZE):
             board += '|'

@@ -20,24 +20,23 @@ class OmokGame:
             'state': self.env.get_state().reshape(-1).tolist(),
             'player': self.env.get_player(),
             'winner': self.env.get_winner(),
+            'done': self.env.is_done(),
             'moves': self.env.get_move_history(),
             'forbidden': self.env.get_forbidden(),
             'rule': self.env.rule,
             'agent': self.agent is not None,
             'version': VERSION,
         }
-        if probs and self.agent is not None and not self.env.get_winner():
+        if probs and self.agent is not None and not self.env.is_done():
             status['probs'] = self.agent.get_probs(
                 self.env.get_state(), self.env.get_player()).round(4).tolist()
         return status
 
     def move(self, pos):
-        pos = int(pos)
-        if 0 <= pos < self.env.get_state().size:
-            self.env.move(pos)
+        self.env.move(int(pos))
 
     def agent_move(self):
-        if self.agent is not None and not self.env.get_winner():
+        if self.agent is not None and not self.env.is_done():
             state = self.env.get_state()
             player = self.env.get_player()
             self.env(self.agent(state, player))
