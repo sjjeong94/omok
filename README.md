@@ -5,7 +5,12 @@ Omok is an open-source Python library for developing AI for Omok (Gomoku) and Co
 
 ```bash
 $ pip install omok
+$ pip install "omok[fast]"   # optional: numba-compiled Renju rule, ~30x faster
 ```
+
+With the `fast` extra, Renju forbidden move detection is compiled with [numba](https://numba.pydata.org/)
+(the first run takes a few seconds to compile, later runs use the on-disk cache).
+Without it, a pure Python implementation is used. Set `OMOK_DISABLE_NUMBA=1` to force the pure Python version.
 
 ## Development
 
@@ -128,6 +133,7 @@ print(reward, info['winner'])  # reward is for the player who just moved (1 for 
 - `obs` and `info['action_mask']` are for the player to move next; `reward` is for the player who just moved.
 - `step()` raises `ValueError` on an illegal move or when the game is already over.
 - The Renju forbidden points are cached until the board changes, so repeated `get_legal_mask()` calls are cheap.
+- Renju env steps are about 2x slower than freestyle with numba, and about 50-70x slower without it.
 - `get_state()` and `get_move_history()` return copies, so they are safe to store as-is.
 - A position out of range (outside `0 <= pos < 225`) raises `ValueError`.
 - Undo moves with `move_back()`, and clone the env with `copy.deepcopy(env)`.

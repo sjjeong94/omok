@@ -1,4 +1,12 @@
-"""Renju forbidden move (3-3, 4-4, overline) detection for black."""
+"""Renju forbidden move (3-3, 4-4, overline) detection for black.
+
+Uses the numba-compiled version in omok._renju_numba when numba is installed
+(pip install omok[fast]), and the pure Python version below otherwise. Set the
+environment variable OMOK_DISABLE_NUMBA=1 to force the pure Python version.
+"""
+import os
+
+import numpy as np
 
 SIZE = 15
 EMPTY = 0
@@ -127,19 +135,52 @@ def _is_forbidden(board, pos):
         board[pos] = EMPTY
 
 
-def is_forbidden(state, pos):
-    """Whether black playing at pos is a forbidden move. state: (15, 15) array."""
+def _py_is_forbidden(state, pos):
     return _is_forbidden(state.reshape(-1).tolist(), int(pos))
 
 
-def forbidden_moves(state):
-    """All empty positions where black is not allowed to play."""
+def _py_forbidden_moves(state):
     board = state.reshape(-1).tolist()
     return [pos for pos in range(SIZE * SIZE) if _is_forbidden(board, pos)]
 
 
-def has_legal_move(state):
-    """Whether black has at least one empty position that is not forbidden."""
+def _py_has_legal_move(state):
     board = state.reshape(-1).tolist()
     return any(v == EMPTY and not _is_forbidden(board, pos)
                for pos, v in enumerate(board))
+
+
+_numba = None
+if not os.environ.get('OMOK_DISABLE_NUMBA'):
+    try:
+        from omok import _renju_numba as _numba
+    except ImportError:
+        pass
+
+BACKEND = 'numba' if _numba else 'python'
+
+
+def _board(state):
+    # a flat copy, since the search places stones on it temporarily
+    return np.array(state, dtype=np.uint8).reshape(-1)
+
+
+def is_forbidden(state, pos):
+    """Whether black playing at pos is a forbidden move. state: (15, 15) array."""
+    if _numba:
+        return bool(_numba.is_forbidden(_board(state), int(pos)))
+    return _py_is_forbidden(state, pos)
+
+
+def forbidden_moves(state):
+    """All empty positions where black is not allowed to play."""
+    if _numba:
+        return _numba.forbidden_moves(_board(state)).tolist()
+    return _py_forbidden_moves(state)
+
+
+def has_legal_move(state):
+    """Whether black has at least one empty position that is not forbidden."""
+    if _numba:
+        return bool(_numba.has_legal_move(_board(state)))
+    return _py_has_legal_move(state)

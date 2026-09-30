@@ -12,8 +12,16 @@ dependencies = ["numpy", "onnxruntime"]
 [project.urls]
 Homepage = "https://github.com/sjjeong94/omok"
 
+[project.optional-dependencies]
+fast = [
+    "numba>=0.59",
+]
+
 [dependency-groups]
-dev = ["pytest"]
+dev = [
+    "numba>=0.59",
+    "pytest",
+]
 
 [build-system]
 requires = ["hatchling"]
