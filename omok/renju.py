@@ -55,13 +55,15 @@ def _is_open_four(board, x, y, dx, dy):
 
 def _is_three(board, x, y, dx, dy):
     """A three can become a straight four by a move that is not forbidden."""
-    for i in range(-4, 5):
+    # a straight four through (x, y) is 4 in a row, so q is at most 3 away
+    for i in range(-3, 4):
         qx, qy = x + dx * i, y + dy * i
         if i == 0 or not _inside(qx, qy) or board[qy * SIZE + qx] != EMPTY:
             continue
         q = qy * SIZE + qx
         board[q] = BLACK
-        open_four = _is_open_four(board, x, y, dx, dy)
+        open_four = (_line_length(board, x, y, dx, dy) == 4
+                     and _is_open_four(board, x, y, dx, dy))
         board[q] = EMPTY
         if open_four and not _is_forbidden(board, q):
             return True
@@ -69,14 +71,32 @@ def _is_three(board, x, y, dx, dy):
 
 
 def _has_potential(board, x, y):
-    """Cheap filter: any forbidden shape needs at least 4 black stones nearby."""
-    n = 0
+    """Cheap necessary condition for a forbidden move at (x, y).
+
+    Counts black stones within 4 cells on each line, stopping at white or the
+    edge since no five-window can cross them. A three needs 2 of them in its
+    line and a four 3, so 3-3 / 4-4 / 4-3 across lines need 2+ in two lines.
+    A single line needs 4+ for an overline or a 4-4 in one line."""
+    lines = 0
     for dx, dy in DIRECTIONS:
-        for i in (-4, -3, -2, -1, 1, 2, 3, 4):
-            cx, cy = x + dx * i, y + dy * i
-            if _inside(cx, cy) and board[cy * SIZE + cx] == BLACK:
-                n += 1
-    return n >= 4
+        n = 0
+        for s in (1, -1):
+            for i in range(1, 5):
+                cx, cy = x + dx * i * s, y + dy * i * s
+                if not _inside(cx, cy):
+                    break
+                v = board[cy * SIZE + cx]
+                if v == BLACK:
+                    n += 1
+                elif v != EMPTY:
+                    break
+        if n >= 4:
+            return True
+        if n >= 2:
+            lines += 1
+            if lines >= 2:
+                return True
+    return False
 
 
 def _is_forbidden(board, pos):

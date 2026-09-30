@@ -94,3 +94,14 @@ def test_random_games_finish():
         while not env.is_done():
             env(int(rng.choice(np.flatnonzero(env.get_legal_mask()))))
         assert env.get_winner() in (0, 1, 2)
+
+
+def test_step_reward_after_two_stone_turn():
+    env = omok.Connect6()
+    moves = [pos(0, 10), pos(0, 0), pos(0, 1), pos(1, 10), pos(2, 10),
+             pos(0, 2), pos(0, 3), pos(3, 10), pos(4, 10), pos(0, 4), pos(0, 5)]
+    for move in moves[:-1]:
+        _, reward, terminated, _, info = env.step(move)
+        assert reward == 0.0 and not terminated
+    _, reward, terminated, _, info = env.step(moves[-1])
+    assert reward == 1.0 and terminated and info['winner'] == 2

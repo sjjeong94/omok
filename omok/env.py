@@ -49,6 +49,8 @@ class BoardGame:
         self._winner = PLAYER_NONE
         self._done = False
         self._move_history = []
+        self._cache = {}
+        return self.get_observation(), self._info()
 
     def _board(self):
         return self._state.reshape(self.size, self.size)
@@ -107,6 +109,24 @@ class BoardGame:
             np.full(board.shape, player == PLAYER_BLACK),
         ]).astype(np.float32)
 
+    def _info(self):
+        return {'player': self._player, 'winner': self._winner,
+                'action_mask': self.get_legal_mask()}
+
+    def step(self, action):
+        """Gymnasium-style step: returns (obs, reward, terminated, truncated, info).
+
+        obs and info['action_mask'] are for the player to move next, while reward
+        is for the player who just moved: 1 for a win, 0 otherwise (draws included).
+        Raises ValueError on an illegal action or when the game is already over."""
+        if self._done:
+            raise ValueError('game is over, call reset()')
+        mover = self._player
+        if self.move(action) == -1:
+            raise ValueError('illegal action %r' % (action,))
+        reward = 1.0 if self._winner == mover else 0.0
+        return self.get_observation(), reward, self._done, False, self._info()
+
     def __call__(self, pos):
         return self.move(pos)
 
@@ -122,6 +142,7 @@ class BoardGame:
             return -1
         else:
             self._state[pos] = self._player
+            self._cache = {}
             result = self.check(pos)
             self._move_history.append(int(pos))
             self._player = self._next_player(len(self._move_history))
@@ -132,6 +153,7 @@ class BoardGame:
         if len(self._move_history):
             move = self._move_history.pop(-1)
             self._state[move] = 0
+            self._cache = {}
             self._player = self._next_player(len(self._move_history))
             self._winner = PLAYER_NONE
             self._done = False
@@ -201,12 +223,16 @@ class Omok(BoardGame):
     def is_forbidden(self, pos):
         if self.rule != 'renju' or self._player != PLAYER_BLACK:
             return False
+        if 'forbidden' in self._cache:
+            return pos in self._cache['forbidden']
         return renju.is_forbidden(self._board(), pos)
 
     def get_forbidden(self):
         if self.rule != 'renju' or self._player != PLAYER_BLACK:
             return []
-        return renju.forbidden_moves(self._board())
+        if 'forbidden' not in self._cache:  # cleared whenever the board changes
+            self._cache['forbidden'] = renju.forbidden_moves(self._board())
+        return list(self._cache['forbidden'])
 
     def check(self, pos):
         result = super().check(pos)
