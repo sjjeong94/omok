@@ -133,24 +133,39 @@ def test_legal_mask():
 
 def test_observation():
     env = omok.Omok()
+    obs = env.get_observation()
+    assert obs.shape == (5, 15, 15) and obs.dtype == np.float32
+    assert obs[3].sum() == 0  # no last move yet
     env(112)
     env(113)
     obs = env.get_observation()
-    assert obs.shape == (3, 15, 15) and obs.dtype == np.float32
     assert obs[0, 7, 7] == 1 and obs[1, 7, 8] == 1  # black to play
     assert obs[0].sum() == 1 and obs[1].sum() == 1
     assert (obs[2] == 1).all()
+    assert obs[3, 7, 8] == 1 and obs[3].sum() == 1  # white's last move
     env(114)
     obs = env.get_observation()
     assert obs[0, 7, 8] == 1 and obs[1].sum() == 2  # white to play
     assert (obs[2] == 0).all()
+    assert obs[3, 7, 9] == 1 and obs[3].sum() == 1
+
+
+def test_observation_forbidden_plane():
+    moves = [110, 0, 111, 2, 82, 4, 97, 6]
+    env = omok.Omok.from_moves(moves)  # black to play, (7,7) is 3-3
+    obs = env.get_observation()
+    assert (np.flatnonzero(obs[4]) == env.get_forbidden()).all() and obs[4, 7, 7] == 1
+    env(113)  # white to play: no forbidden points
+    assert env.get_observation()[4].sum() == 0
+    env = omok.Omok.from_moves(moves, rule='freestyle')
+    assert env.get_observation()[4].sum() == 0
 
 
 def test_reset_returns_observation():
     env = omok.Omok()
     env(112)
     obs, info = env.reset()
-    assert obs.shape == (3, 15, 15) and obs.sum() == 225  # only the black-to-play plane
+    assert obs.shape == (5, 15, 15) and obs.sum() == 225  # only the black-to-play plane
     assert info['player'] == 1 and info['winner'] == 0
     assert info['action_mask'].all()
 
@@ -211,3 +226,34 @@ def test_forbidden_cache_follows_board():
     env(113)  # black's (7,6) removed -> (7,7) no longer 3-3
     env(6)
     assert 112 not in env.get_forbidden() and not env.is_forbidden(112)
+
+
+def test_from_moves():
+    moves = [110, 0, 111, 2, 82, 4, 97, 6]
+    env = omok.Omok.from_moves(moves)
+    assert env.get_move_history() == moves and env.get_player() == 1
+    assert not env.get_legal_mask()[112]  # 3-3
+    assert omok.Omok.from_moves(moves, rule='freestyle').get_legal_mask()[112]
+    with pytest.raises(ValueError):
+        omok.Omok.from_moves(moves + [112])
+    with pytest.raises(ValueError):
+        omok.Omok.from_moves([0, 0])
+    env = omok.Omok.from_moves([0, 100, 1, 90, 2, 80, 3, 70, 4])
+    assert env.is_done() and env.get_winner() == 1
+
+
+def test_clone_is_independent():
+    env = omok.Omok.from_moves([110, 0, 111, 2, 82, 4, 97, 6])
+    assert 112 in env.get_forbidden()  # fill the cache before cloning
+    clone = env.clone()
+    assert clone.rule == env.rule
+    assert (clone.get_state() == env.get_state()).all()
+    assert (clone.get_legal_mask() == env.get_legal_mask()).all()
+
+    clone.move(113)
+    clone.move(50)
+    assert env.get_move_history() == [110, 0, 111, 2, 82, 4, 97, 6]
+    assert env.get_state().flat[113] == 0 and env.get_player() == 1
+    assert 112 in env.get_forbidden()
+    env.move_back()
+    assert clone.get_move_history()[-2:] == [113, 50]

@@ -78,12 +78,16 @@ def test_interface():
         env(361)
 
     obs = env.get_observation()
-    assert obs.shape == (4, 19, 19) and obs.dtype == np.float32
-    assert (obs[2] == 1).all() and (obs[3] == 1).all()  # black, single stone
+    assert obs.shape == (5, 19, 19) and obs.dtype == np.float32
+    assert (obs[2] == 1).all() and obs[3].sum() == 0 and (obs[4] == 1).all()  # black, single stone
     env(pos(9, 9))
     obs = env.get_observation()
-    assert obs[1, 9, 9] == 1 and (obs[2] == 0).all() and (obs[3] == 0).all()
-    assert 'Moves   1' in repr(env)
+    assert obs[1, 9, 9] == 1 and (obs[2] == 0).all() and (obs[4] == 0).all()
+    assert obs[3, 9, 9] == 1 and obs[3].sum() == 1  # last stone
+    env(pos(0, 0))
+    obs = env.get_observation()
+    assert obs[3, 0, 0] == 1 and obs[3].sum() == 1 and (obs[4] == 1).all()
+    assert 'Moves   2' in repr(env)
 
 
 def test_random_games_finish():
@@ -105,3 +109,13 @@ def test_step_reward_after_two_stone_turn():
         assert reward == 0.0 and not terminated
     _, reward, terminated, _, info = env.step(moves[-1])
     assert reward == 1.0 and terminated and info['winner'] == 2
+
+
+def test_clone_and_from_moves():
+    env = omok.Connect6.from_moves([0, 1, 2])
+    assert env.get_player() == 1 and env.get_stones_left() == 2
+    clone = env.clone()
+    clone.move(3)
+    assert clone.get_player() == 1 and clone.get_stones_left() == 1
+    assert env.get_stones_left() == 2
+    assert env.get_move_history() == [0, 1, 2]

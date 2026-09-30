@@ -112,7 +112,7 @@ import omok
 
 env = omok.Omok()
 while not env.is_done():
-    obs = env.get_observation()   # (3, 15, 15) float32: own stones, opponent stones, black to play
+    obs = env.get_observation()   # (5, 15, 15) float32, see below
     mask = env.get_legal_mask()   # (225,) bool: legal moves (excludes Renju forbidden points)
     action = np.random.choice(np.flatnonzero(mask))
     env(action)                   # 0: continue, 1: game over, -1: illegal move
@@ -136,7 +136,37 @@ print(reward, info['winner'])  # reward is for the player who just moved (1 for 
 - Renju env steps are about 2x slower than freestyle with numba, and about 50-70x slower without it.
 - `get_state()` and `get_move_history()` return copies, so they are safe to store as-is.
 - A position out of range (outside `0 <= pos < 225`) raises `ValueError`.
-- Undo moves with `move_back()`, and clone the env with `copy.deepcopy(env)`.
+- Undo moves with `move_back()`.
+
+Observation planes of `get_observation()`, all from the current player's view:
+
+| Plane | `Omok` (5, 15, 15) | `Connect6` (5, 19, 19) |
+|---|---|---|
+| 0 | own stones | own stones |
+| 1 | opponent stones | opponent stones |
+| 2 | 1 if black to play | 1 if black to play |
+| 3 | last stone placed | last stone placed |
+| 4 | forbidden points (Renju, black to play) | 1 if the next stone is the last one of the turn |
+
+Search (e.g. MCTS)
+```python
+env = omok.Omok.from_moves([112, 111, 96])   # replay moves; kwargs go to the constructor (rule=...)
+child = env.clone()                          # independent copy, ~6x faster than copy.deepcopy
+child.move(97)
+```
+
+Symmetry augmentation
+```python
+from omok import transforms
+
+obs = env.get_observation()
+policy = np.zeros(225, np.float32)           # e.g. MCTS visit distribution
+for obs_t, policy_t in transforms.symmetries(obs, policy):   # 8 rotations/reflections
+    ...
+```
+
+`transforms.transform_board`, `transform_action` and `transform_policy` apply a single symmetry code (0-7)
+and its inverse, and work for any board size.
 
 Connect6
 ```python
@@ -148,8 +178,7 @@ for move in [180, 179, 161, 160, 200, 181, 199, 140, 220, 198, 162, 120]:
 print(env.get_winner())  # 1: black completes six with the last move
 ```
 
-`Connect6` provides the same interface as `Omok` (`step`, `get_legal_mask`, `get_observation`, `is_done`, `move_back`, etc.).
-Its observation adds a 4th plane indicating whether the next stone is the last one of the current turn.
+`Connect6` provides the same interface as `Omok` (`step`, `get_legal_mask`, `get_observation`, `from_moves`, `clone`, `move_back`, etc.).
 
 ### License
 

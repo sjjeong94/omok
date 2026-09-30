@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 from omok import renju
 
@@ -52,6 +54,24 @@ class BoardGame:
         self._cache = {}
         return self.get_observation(), self._info()
 
+    @classmethod
+    def from_moves(cls, moves, **kwargs):
+        """New env with moves played in order. kwargs go to the constructor (e.g. rule).
+        Raises ValueError if a move is illegal."""
+        env = cls(**kwargs)
+        for i, pos in enumerate(moves):
+            if env.move(pos) == -1:
+                raise ValueError('illegal move %r at index %d' % (pos, i))
+        return env
+
+    def clone(self):
+        """Independent copy of the env, much cheaper than copy.deepcopy (e.g. for MCTS)."""
+        env = copy.copy(self)
+        env._state = self._state.copy()
+        env._move_history = list(self._move_history)
+        env._cache = dict(self._cache)  # cached values are never mutated in place
+        return env
+
     def _board(self):
         return self._state.reshape(self.size, self.size)
 
@@ -99,15 +119,22 @@ class BoardGame:
         return mask
 
     def get_observation(self):
-        """Float32 planes of shape (3, size, size) from the current player's view:
-        own stones, opponent stones, and a constant plane that is 1 if black to play."""
+        """Float32 planes of shape (4, size, size) from the current player's view:
+        own stones, opponent stones, a constant plane that is 1 if black to play,
+        and the last stone placed (all zeros before the first move)."""
+        return self._observation(4)
+
+    def _observation(self, planes):
+        """First 4 planes of get_observation, with room for extra planes after them."""
         board = self._board()
         player = self._player
-        return np.stack([
-            board == player,
-            board == player ^ 3,
-            np.full(board.shape, player == PLAYER_BLACK),
-        ]).astype(np.float32)
+        obs = np.zeros((planes, self.size, self.size), np.float32)
+        obs[0] = board == player
+        obs[1] = board == player ^ 3
+        obs[2] = player == PLAYER_BLACK
+        if self._move_history:
+            obs[3].flat[self._move_history[-1]] = 1
+        return obs
 
     def _info(self):
         return {'player': self._player, 'winner': self._winner,
@@ -227,6 +254,13 @@ class Omok(BoardGame):
             return pos in self._cache['forbidden']
         return renju.is_forbidden(self._board(), pos)
 
+    def get_observation(self):
+        """Float32 planes of shape (5, 15, 15): own stones, opponent stones, black to play,
+        last stone placed, and the current player's forbidden points (Renju, black only)."""
+        obs = self._observation(5)
+        obs[4].flat[self.get_forbidden()] = 1
+        return obs
+
     def get_forbidden(self):
         if self.rule != 'renju' or self._player != PLAYER_BLACK:
             return []
@@ -252,8 +286,8 @@ class Connect6(BoardGame):
         return PLAYER_BLACK if (num_moves + 1) // 2 % 2 == 0 else PLAYER_WHITE
 
     def get_observation(self):
-        """Float32 planes of shape (4, 19, 19): own stones, opponent stones,
-        black to play, and a constant plane that is 1 on the last stone of a turn."""
-        obs = super().get_observation()
-        last = np.full((1, self.size, self.size), self.get_stones_left() == 1, np.float32)
-        return np.concatenate([obs, last])
+        """Float32 planes of shape (5, 19, 19): own stones, opponent stones, black to play,
+        last stone placed, and a constant plane that is 1 on the last stone of a turn."""
+        obs = self._observation(5)
+        obs[4] = self.get_stones_left() == 1
+        return obs
