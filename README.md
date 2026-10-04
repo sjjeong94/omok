@@ -32,10 +32,13 @@ $ python -m omok
 ```
 
 A web server starts at `http://127.0.0.1:8000` and a browser opens automatically.
+The AI is `AlphaZeroAgent` with a 200-simulation search, about 1 s per move on a CPU (see "AlphaZero agent" below).
 Click the board to place a stone. Keyboard shortcuts: `A` (AI move), `B` (undo), `Space` (reset), `S` (save game record).
 Turn on `Show AI probabilities` (shortcut `P`) to show the AI's move probabilities (%) for the current turn as a heatmap on the board.
 
 ```bash
+$ python -m omok --simulations 0            # the AlphaZero network alone, no search (default: 200 simulations per move)
+$ python -m omok --agent policy             # the previous AI, OmokAgent (--model-index 0 or 1)
 $ python -m omok --port 8080 --no-browser   # set the port, don't open a browser
 $ python -m omok --no-agent                 # run without the AI
 $ python -m omok --game connect6            # Connect6 (no AI)
@@ -104,6 +107,29 @@ while True:
     if env.is_done():
         break
 ```
+
+AlphaZero agent
+```python
+import omok
+
+agent = omok.AlphaZeroAgent(rule='renju', simulations=200)   # simulations=0: the network alone
+env = omok.Omok(rule='renju')
+while not env.is_done():
+    env(agent(env.get_state(), env.get_player()))
+probs = agent.get_probs(env.get_state(), env.get_player())   # same interface as OmokAgent
+```
+
+`AlphaZeroAgent` plays with a policy-value network trained by self-play (Gumbel AlphaZero) in
+[omok-rl](https://github.com/sjjeong94/omok-rl), one network per rule (`alphazero-renju.onnx`, `alphazero-freestyle.onnx`),
+with an optional PUCT search (numpy only). Over 100 games from random 4-move openings against `OmokAgent(model_index=1)`:
+
+| Rule | Network alone | 200 simulations |
+|---|---:|---:|
+| Renju | 0.76 | 0.91 |
+| freestyle | 0.82 | 0.88 |
+
+(score: win 1, draw 0.5, loss 0; half of the games as each color). A search of 200 simulations takes about 1 s per move on a CPU.
+`get_probs` returns the network's probabilities averaged over the 8 symmetries (`simulations=0`) or the search's visit shares.
 
 Reinforcement Learning
 ```python

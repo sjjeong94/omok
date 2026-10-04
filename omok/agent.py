@@ -14,15 +14,19 @@ models_name = [
 ]
 
 
-def check_models(model_index: int = 0):
+def check_model(name: str):
+    """Path of the model file `name` in ./omok_assets, downloaded from the repository on first use."""
     if not os.path.exists(models_path):
         os.makedirs(models_path, exist_ok=True)
-    name = models_name[model_index]
     path = os.path.join(models_path, name)
     if not os.path.exists(path):
         link = models_link + name
         request.urlretrieve(link, path)
     return path
+
+
+def check_models(model_index: int = 0):
+    return check_model(models_name[model_index])
 
 
 def softmax(z):
