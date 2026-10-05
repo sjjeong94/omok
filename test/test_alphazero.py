@@ -1,3 +1,4 @@
+import json
 import os
 
 import numpy as np
@@ -95,3 +96,38 @@ def test_web_ui():
     game = omok.OmokGame(agent=a, rule='renju')
     status = game.handle('move', {'pos': 112, 'reply': True, 'probs': True})
     assert len(status['moves']) == 2 and abs(sum(status['probs']) - 1) < 1e-3
+
+
+@pytest.mark.parametrize('simulations', [0, 32])
+def test_get_analysis(simulations):
+    a = agent(simulations=simulations)
+    env = omok.Omok(rule='renju')
+    for pos in (112, 113, 127):
+        env(pos)
+    analysis = a.get_analysis(env.get_state(), env.get_player())
+    legal = env.get_legal_mask()
+    prior = np.array(analysis['prior'])
+    assert abs(prior.sum() - 1) < 1e-3 and not prior[~legal].any()
+    assert -1 <= analysis['value'] <= 1
+    lines = analysis['lines']
+    assert lines and all(legal[line['pos']] and line['pv'][0] == line['pos'] for line in lines)
+    if simulations == 0:
+        assert 'visits' not in analysis
+        return
+    visits = np.array(analysis['visits'])
+    assert abs(visits.sum() - 1) < 1e-3 and analysis['simulations'] == simulations
+    assert [line['visits'] for line in lines] == sorted((line['visits'] for line in lines), reverse=True)
+    for line in lines:
+        assert line['q'] == analysis['q'][line['pos']] and -1 <= line['q'] <= 1
+        sim = env.clone()  # a principal variation is a sequence of legal moves
+        for pos in line['pv']:
+            assert sim.get_legal_mask()[pos] and not sim.is_done()
+            sim(pos)
+
+
+def test_web_ui_analysis():
+    a = agent(simulations=16)
+    game = omok.OmokGame(agent=a, rule='renju')
+    status = game.handle('move', {'pos': 112, 'analysis': True})
+    assert 'analysis' in status and status['analysis']['simulations'] == 16
+    json.dumps(status)  # served as JSON

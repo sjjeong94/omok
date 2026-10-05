@@ -34,7 +34,9 @@ $ python -m omok
 A web server starts at `http://127.0.0.1:8000` and a browser opens automatically.
 The AI is `AlphaZeroAgent` with a 200-simulation search, about 1 s per move on a CPU (see "AlphaZero agent" below).
 Click the board to place a stone. Keyboard shortcuts: `A` (AI move), `B` (undo), `Space` (reset), `S` (save game record).
-Turn on `Show AI probabilities` (shortcut `P`) to show the AI's move probabilities (%) for the current turn as a heatmap on the board.
+Turn on `Show AI analysis` (shortcut `P`) to see what the AI thinks of the current turn:
+a heatmap layer on the board (search visits, network prior, win rate × visits, or where the search disagrees with the network),
+the best line it expects (hover a move on the board or in the candidate table to see that move's line), and a win-rate bar.
 
 ```bash
 $ python -m omok --simulations 0            # the AlphaZero network alone, no search (default: 200 simulations per move)
@@ -130,6 +132,7 @@ with an optional PUCT search (numpy only). Over 100 games from random 4-move ope
 
 (score: win 1, draw 0.5, loss 0; half of the games as each color). A search of 200 simulations takes about 1 s per move on a CPU.
 `get_probs` returns the network's probabilities averaged over the 8 symmetries (`simulations=0`) or the search's visit shares.
+`get_analysis` returns what the web UI's analysis shows: the prior, visit shares and win rate (Q) of each move, the position's value, and the candidate moves with their principal variations.
 
 Reinforcement Learning
 ```python

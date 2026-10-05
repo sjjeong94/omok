@@ -93,9 +93,14 @@ class AlphaZeroAgent:
 
     def network_probs(self, env):
         """The network's move probabilities, averaged over the 8 board symmetries."""
+        return self.network_eval(env)[0]
+
+    def network_eval(self, env):
+        """The network's move probabilities and value for the player to move, averaged over the 8 symmetries."""
         obs = np.repeat(env.get_observation()[None], 8, 0)
         mask = np.repeat(env.get_legal_mask()[None], 8, 0)
-        return self.evaluate(obs, mask, np.arange(8))[0].mean(0)
+        probs, values = self.evaluate(obs, mask, np.arange(8))
+        return probs.mean(0), float(np.mean(values))
 
     # ------------------------------------------------------------------ search
 
@@ -174,6 +179,56 @@ class AlphaZeroAgent:
         probs = np.zeros(225, np.float32)
         probs[root.moves] = root.n / root.n.sum()
         return probs
+
+    def get_analysis(self, state, player, lines=10, depth=10):
+        """What the agent thinks of the position, for display. Values are for `player`, in [-1, 1].
+
+        - 'prior' (225,): the network's move probabilities; with a search also 'visits' (225,), the visit shares,
+          and 'q' (225,), the mean value of each searched move (None where unvisited).
+        - 'value': the position's value (the search's visit-weighted mean, or the network's estimate).
+        - 'lines': up to `lines` candidate moves, best first, each with its principal variation 'pv': the move,
+          then the most visited reply, and so on (up to `depth` moves).
+        """
+        env = env_from_state(state, player, self.rule)
+        if self.simulations <= 0:
+            prior, value = self.network_eval(env)
+            top = np.argsort(-prior, kind='stable')[:lines]
+            return {
+                'simulations': 0,
+                'prior': prior.round(4).tolist(),
+                'value': round(value, 4),
+                'lines': [{'pos': int(m), 'prior': round(float(prior[m]), 4), 'pv': [int(m)]}
+                          for m in top if prior[m] > 0],
+            }
+        root = self.root(state, player)
+        prior, visits, q = np.zeros(225), np.zeros(225), [None] * 225
+        prior[root.moves] = root.prior
+        visits[root.moves] = root.n / root.n.sum()
+        for m, n, w in zip(root.moves, root.n, root.w):
+            if n > 0:
+                q[m] = round(float(w / n), 4)
+        order = np.lexsort((-root.prior, -root.n))  # most visited first, ties by prior
+        return {
+            'simulations': int(root.visits),
+            'prior': prior.round(4).tolist(),
+            'visits': visits.round(4).tolist(),
+            'q': q,
+            'value': round(float(root.w.sum() / root.n.sum()), 4),
+            'lines': [{'pos': int(root.moves[i]), 'prior': round(float(root.prior[i]), 4),
+                       'visits': int(root.n[i]), 'q': q[root.moves[i]], 'pv': principal_variation(root, i, depth)}
+                      for i in order[:lines] if root.n[i] > 0],
+        }
+
+
+def principal_variation(node, i, depth):
+    """Move `i` of `node`, then the most visited move of each following position, up to `depth` moves."""
+    pv = [int(node.moves[i])]
+    node = node.children[i]
+    while len(pv) < depth and node is not None and node.n.sum() > 0:
+        i = int(np.argmax(node.n))
+        pv.append(int(node.moves[i]))
+        node = node.children[i]
+    return pv
 
 
 def backup(path, value):

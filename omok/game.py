@@ -3,6 +3,7 @@ import time
 import json
 import threading
 import webbrowser
+import numpy as np
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from omok import Omok, Connect6
@@ -15,7 +16,7 @@ class OmokGame:
         self.agent = agent
         self.lock = threading.Lock()
 
-    def get_status(self, probs=False):
+    def get_status(self, probs=False, analysis=False):
         status = {
             'state': self.env.get_state().reshape(-1).tolist(),
             'player': self.env.get_player(),
@@ -33,7 +34,19 @@ class OmokGame:
         if probs and self.agent is not None and not self.env.is_done():
             status['probs'] = self.agent.get_probs(
                 self.env.get_state(), self.env.get_player()).round(4).tolist()
+        if analysis and self.agent is not None and not self.env.is_done():
+            status['analysis'] = self.get_analysis()
         return status
+
+    def get_analysis(self):
+        state, player = self.env.get_state(), self.env.get_player()
+        if hasattr(self.agent, 'get_analysis'):
+            return self.agent.get_analysis(state, player)
+        prior = self.agent.get_probs(state, player)  # a policy-only agent: just its probabilities
+        top = np.argsort(-prior, kind='stable')[:10]
+        return {'simulations': 0, 'prior': prior.round(4).tolist(), 'value': None,
+                'lines': [{'pos': int(m), 'prior': round(float(prior[m]), 4), 'pv': [int(m)]}
+                          for m in top if prior[m] > 0]}
 
     def move(self, pos):
         self.env.move(int(pos))
@@ -69,7 +82,7 @@ class OmokGame:
                 return {'file': self.save_log()}
             else:
                 return None
-            return self.get_status(probs=body.get('probs'))
+            return self.get_status(probs=body.get('probs'), analysis=body.get('analysis'))
 
     def make_handler(self):
         game = self

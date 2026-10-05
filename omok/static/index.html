@@ -73,6 +73,25 @@
   kbd { color: var(--muted); font-family: ui-monospace, monospace; font-size: 12px; }
   label { display: flex; gap: 8px; align-items: center; margin: 14px 0 0; color: var(--muted); cursor: pointer; }
   footer { margin-top: 16px; color: var(--muted); font-size: 12px; }
+  select {
+    width: 100%;
+    margin-top: 10px;
+    padding: 7px 8px;
+    background: #373b41;
+    color: var(--text);
+    border: 0;
+    border-radius: 6px;
+    font: inherit;
+  }
+  .note { margin-top: 6px; color: var(--muted); font-size: 12px; }
+  .eval { display: flex; justify-content: space-between; margin-top: 14px; font-size: 13px; color: var(--muted); }
+  .bar { height: 8px; margin: 6px 0 10px; border-radius: 4px; background: #f4f4f4; overflow: hidden; }
+  .bar > div { height: 100%; background: #111; border-right: 1px solid #555; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th { color: var(--muted); font-weight: 500; }
+  th, td { padding: 3px 4px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  tbody tr:hover, tbody tr.focus { background: #373b41; }
 </style>
 </head>
 <body>
@@ -93,7 +112,23 @@
     <label><input type="checkbox" id="auto"> AI replies automatically</label>
     <label><input type="checkbox" id="numbers" checked> Show move numbers</label>
     <label><input type="checkbox" id="marks" checked> Show forbidden moves</label>
-    <label><input type="checkbox" id="probs"> Show AI probabilities <kbd>P</kbd></label>
+    <label><input type="checkbox" id="analysis"> Show AI analysis <kbd>P</kbd></label>
+    <div id="analysis-panel" hidden>
+      <select id="layer">
+        <option value="visits">Visits (search)</option>
+        <option value="prior">Prior (network)</option>
+        <option value="q">Win rate × visits</option>
+        <option value="diff">Search − network</option>
+      </select>
+      <label><input type="checkbox" id="pv" checked> Show best line</label>
+      <div class="eval"><span id="eval-black"></span><span id="eval-white"></span></div>
+      <div class="bar"><div id="eval-bar"></div></div>
+      <table>
+        <thead><tr><th>Move</th><th id="lines-share">Visits</th><th>Win</th><th>Prior</th></tr></thead>
+        <tbody id="lines"></tbody>
+      </table>
+      <div class="note" id="eval-sims"></div>
+    </div>
     <footer id="version"></footer>
   </aside>
 </main>
@@ -106,16 +141,19 @@ let CELL = W / SIZE;
 const autoBox = document.getElementById('auto');
 const numbersBox = document.getElementById('numbers');
 const marksBox = document.getElementById('marks');
-const probsBox = document.getElementById('probs');
+const analysisBox = document.getElementById('analysis');
+const layerSelect = document.getElementById('layer');
+const pvBox = document.getElementById('pv');
 let game = null;
 let hover = -1;
+let focus = -1;  // the candidate move hovered in the analysis table
 let busy = false;
 
 async function api(action, body) {
   const res = await fetch('/api/' + action, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({...body, probs: probsBox.checked}),
+    body: JSON.stringify({analysis: analysisBox.checked, ...body}),
   });
   return res.json();
 }
@@ -189,7 +227,116 @@ function drawForbidden(x, y) {
   ctx.stroke();
 }
 
-function drawProbs(probs) {
+function circle(pos, r) {
+  ctx.beginPath();
+  ctx.arc(center(pos % SIZE), center(Math.floor(pos / SIZE)), r, 0, Math.PI * 2);
+}
+
+function label(pos, text, color) {
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `600 ${Math.round(CELL * 0.3)}px system-ui, sans-serif`;
+  ctx.fillText(text, center(pos % SIZE), center(Math.floor(pos / SIZE)) + 1);
+}
+
+// Win rate of the searched moves: circle size by visit share, color from red (losing) to green (winning).
+function drawWinRates(a, skip) {
+  const max = Math.max(...a.visits);
+  a.q.forEach((q, pos) => {
+    if (q === null || skip.has(pos)) return;
+    const t = a.visits[pos] / max;
+    const hue = 60 + 120 * Math.max(-0.5, Math.min(0.5, q));  // red (losing) .. green (winning), full at ±0.5
+    ctx.fillStyle = `hsla(${hue}, 75%, 42%, ${0.45 + 0.5 * t})`;
+    circle(pos, CELL * (0.2 + 0.25 * Math.sqrt(t)));
+    ctx.fill();
+    if (t >= 0.05) label(pos, Math.round((q + 1) * 50), '#fff');
+  });
+}
+
+// Where the search disagrees with the network: green where it raised a move, red where it lowered one.
+function drawDiff(a, skip) {
+  const diff = a.visits.map((v, pos) => v - a.prior[pos]);
+  const max = Math.max(...diff.map(Math.abs));
+  if (!(max > 0)) return;
+  diff.forEach((d, pos) => {
+    if (Math.abs(d) < 0.005 || skip.has(pos)) return;
+    const t = Math.abs(d) / max;
+    ctx.fillStyle = d > 0 ? `rgba(46, 160, 67, ${0.3 + 0.6 * t})` : `rgba(229, 57, 53, ${0.3 + 0.6 * t})`;
+    circle(pos, CELL * (0.18 + 0.25 * Math.sqrt(t)));
+    ctx.fill();
+    if (Math.abs(d) >= 0.01) label(pos, (d > 0 ? '+' : '−') + Math.round(Math.abs(d) * 100), '#fff');
+  });
+}
+
+// A principal variation as translucent stones numbered on from the game, starting with the player to move.
+function drawLine(pv, player, start) {
+  pv.forEach((pos, i) => {
+    const p = i % 2 ? 3 - player : player;
+    drawStone(pos % SIZE, Math.floor(pos / SIZE), p, 0.6);
+    ctx.strokeStyle = '#1e88e5';
+    ctx.lineWidth = i ? 1.5 : 3;
+    circle(pos, CELL * 0.45);
+    ctx.stroke();
+    label(pos, start + i, p === 1 ? '#fff' : '#111');
+  });
+}
+
+function layer() {
+  return game.analysis.visits ? layerSelect.value : 'prior';
+}
+
+function drawAnalysis(a, skip) {
+  const l = layer();
+  if (l === 'q') drawWinRates(a, skip);
+  else if (l === 'diff') drawDiff(a, skip);
+  else drawProbs(a[l], skip);
+}
+
+// The line to show: the hovered candidate's, else the best one's.
+function shownLine() {
+  const a = game.analysis;
+  if (!a || !analysisBox.checked || isOver()) return null;
+  const at = focus >= 0 ? focus : hover;
+  return a.lines.find(l => l.pos === at) || (pvBox.checked ? a.lines[0] : null) || null;
+}
+
+const coord = pos => 'ABCDEFGHIJKLMNOPQRS'[pos % SIZE] + (SIZE - Math.floor(pos / SIZE));
+const pct = x => x === null || x === undefined ? '—' : Math.round(x * 100) + '%';
+const win = q => q === null || q === undefined ? '—' : Math.round((q + 1) * 50) + '%';
+
+function renderAnalysis(line) {
+  const a = game.analysis;
+  const panel = document.getElementById('analysis-panel');
+  panel.hidden = !analysisBox.checked || !a;
+  if (panel.hidden) return;
+  const search = !!a.visits;
+  [...layerSelect.options].forEach(o => { o.disabled = !search && o.value !== 'prior'; });
+  layerSelect.value = layer();
+
+  // The evaluation bar shows Black's share; `value` is for the player to move.
+  const known = a.value !== null && a.value !== undefined;
+  const mine = known ? (a.value + 1) / 2 : 0.5;
+  const black = game.player === 1 ? mine : 1 - mine;
+  document.getElementById('eval-black').textContent = known ? `Black ${Math.round(black * 100)}%` : 'No evaluation';
+  document.getElementById('eval-white').textContent = known ? `${Math.round((1 - black) * 100)}% White` : '';
+  document.getElementById('eval-sims').textContent = search
+    ? `${a.simulations} simulations · hover a move for its line` : 'Network only (no search)';
+  document.getElementById('eval-bar').style.width = black * 100 + '%';
+
+  const rows = document.getElementById('lines');
+  if (rows.analysis !== a) {  // rebuild only for a new analysis, so hovering a row keeps working
+    rows.analysis = a;
+    document.getElementById('lines-share').textContent = search ? 'Visits' : '';
+    rows.innerHTML = a.lines.slice(0, 6).map(l =>
+      `<tr data-pos="${l.pos}"><td>${coord(l.pos)}</td>`
+      + `<td title="${search ? l.visits + ' visits' : ''}">${search ? pct(a.visits[l.pos]) : ''}</td>`
+      + `<td>${win(l.q)}</td><td>${pct(l.prior)}</td></tr>`).join('');
+  }
+  for (const tr of rows.rows) tr.classList.toggle('focus', !!line && +tr.dataset.pos === line.pos);
+}
+
+function drawProbs(probs, skip = new Set()) {
   const max = Math.max(...probs);
   if (!(max > 0)) return;
   const best = probs.indexOf(max);
@@ -197,7 +344,7 @@ function drawProbs(probs) {
   ctx.textBaseline = 'middle';
   ctx.font = `600 ${Math.round(CELL * 0.3)}px system-ui, sans-serif`;
   probs.forEach((p, pos) => {
-    if (p < 0.001) return;
+    if (p < 0.001 || skip.has(pos)) return;
     const t = p / max;
     const cx = center(pos % SIZE), cy = center(Math.floor(pos / SIZE));
     ctx.fillStyle = `rgba(30, 136, 229, ${0.2 + 0.7 * t})`;
@@ -254,15 +401,17 @@ function render() {
     ctx.stroke();
   }
 
-  if (!over && probsBox.checked && game.probs) {
-    drawProbs(game.probs);
+  const line = shownLine();
+  if (!over && analysisBox.checked && game.analysis) {
+    drawAnalysis(game.analysis, new Set(line ? line.pv : []));
+    if (line) drawLine(line.pv, player, moves.length + 1);
   }
 
   if (!over && marksBox.checked) {
     forbidden.forEach(pos => drawForbidden(pos % SIZE, Math.floor(pos / SIZE)));
   }
 
-  if (canPlay(hover)) {
+  if (canPlay(hover) && !(line && line.pos === hover)) {
     drawStone(hover % SIZE, Math.floor(hover / SIZE), player, 0.45);
   }
   canvas.style.cursor = hover >= 0 && !canPlay(hover) ? 'not-allowed' : 'pointer';
@@ -283,7 +432,8 @@ function render() {
     : over ? 'Draw' : '';
   document.getElementById('agent-btn').disabled = !game.agent || over;
   autoBox.disabled = !game.agent;
-  probsBox.disabled = !game.agent;
+  analysisBox.disabled = !game.agent;
+  renderAnalysis(line);
   document.getElementById('version').textContent = 'version ' + game.version;
 }
 
@@ -303,23 +453,34 @@ canvas.addEventListener('click', async e => {
   const pos = posFromEvent(e);
   if (busy || !game || !canPlay(pos)) return;
   // Render the player's stone first, then ask the AI in a separate request.
-  await send('move', {pos});
-  if (autoBox.checked && game.agent && !game.done) await send('agent');
+  const reply = autoBox.checked && game.agent;
+  await send('move', {pos, analysis: analysisBox.checked && !reply});  // no search before the stone shows
+  if (reply && !game.done) await send('agent');
 });
+
+const linesBody = document.getElementById('lines');
+linesBody.addEventListener('mouseover', e => {
+  const tr = e.target.closest('tr');
+  const pos = tr ? +tr.dataset.pos : -1;
+  if (pos !== focus) { focus = pos; render(); }
+});
+linesBody.addEventListener('mouseleave', () => { focus = -1; render(); });
 
 document.querySelectorAll('button[data-action]').forEach(b =>
   b.addEventListener('click', () => send(b.dataset.action)));
 numbersBox.addEventListener('change', render);
 marksBox.addEventListener('change', render);
-probsBox.addEventListener('change', () => probsBox.checked ? send('state') : render());
+analysisBox.addEventListener('change', () => analysisBox.checked ? send('state') : render());
+layerSelect.addEventListener('change', render);
+pvBox.addEventListener('change', render);
 
 const keys = {' ': 'reset', a: 'agent', b: 'back', s: 'save'};
 document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const action = keys[e.key.toLowerCase()];
   if (e.key.toLowerCase() === 'p' && game && game.agent) {
-    probsBox.checked = !probsBox.checked;
-    probsBox.dispatchEvent(new Event('change'));
+    analysisBox.checked = !analysisBox.checked;
+    analysisBox.dispatchEvent(new Event('change'));
     return;
   }
   if (!action) return;
