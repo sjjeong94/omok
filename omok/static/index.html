@@ -26,15 +26,23 @@
     justify-content: center;
     padding: 16px;
   }
+  [hidden] { display: none !important; }
+  /* The board takes the room the side panels and the graph leave on one screen. */
   main {
-    display: flex;
-    gap: 24px;
-    align-items: flex-start;
-    flex-wrap: wrap;
+    --side: 270px;  /* the side panels and the gaps beside the board */
+    --graph-h: 0px;
+    display: grid;
+    grid-template-areas: "board controls";
+    gap: 20px;
+    align-items: start;
     justify-content: center;
   }
-  .board-col { width: min(92vw, 80vh, 760px); }
-  main.with-graph .board-col { width: min(92vw, calc(80vh - 140px), 760px); }
+  main.with-analysis { --side: 560px; grid-template-areas: "board controls analysis"; }
+  .board-col { grid-area: board; }
+  .controls { grid-area: controls; }
+  #analysis-panel { grid-area: analysis; }
+  main.with-graph { --graph-h: 146px; }
+  .board-col { width: min(760px, calc(100vh - 32px - var(--graph-h)), calc(100vw - 32px - var(--side))); flex: none; }
   #board {
     display: block;
     width: 100%;
@@ -47,19 +55,35 @@
   #graph { display: block; width: 100%; height: 110px; margin-top: 12px; border-radius: 6px; background: var(--panel); }
   .graph-info { min-height: 1.4em; margin-top: 4px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   aside {
-    width: 240px;
+    width: 250px;
+    flex: none;
     background: var(--panel);
     border-radius: 8px;
-    padding: 20px;
+    padding: 18px;
   }
-  h1 { margin: 0 0 16px; font-size: 22px; letter-spacing: .08em; }
-  .status { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin-bottom: 16px; }
+  #analysis-panel { width: 270px; }
+  /* narrower: the analysis goes under the controls; narrower still, everything stacks */
+  @media (max-width: 999px) {
+    main.with-analysis { --side: 270px; grid-template-areas: "board controls" "board analysis"; }
+    main.with-analysis .board-col { grid-row: 1 / span 2; }
+  }
+  @media (max-width: 699px) {
+    main, main.with-analysis { grid-template-areas: "board" "controls" "analysis"; }
+    main.with-analysis .board-col { grid-row: auto; }
+    .board-col, aside, #analysis-panel { width: min(760px, calc(100vw - 32px)); }
+  }
+  h1 { margin: 0 0 14px; font-size: 22px; letter-spacing: .08em; }
+  h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
+  .status { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin-bottom: 12px; }
   .status dt { color: var(--muted); }
   .status dd { margin: 0; font-variant-numeric: tabular-nums; }
   .stone { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -1px; margin-right: 6px; }
   .stone.b { background: #111; border: 1px solid #555; }
   .stone.w { background: #f4f4f4; }
-  #message { min-height: 1.4em; color: var(--accent); font-weight: 600; margin-bottom: 12px; }
+  #message { min-height: 1.4em; color: var(--accent); font-weight: 600; margin-bottom: 10px; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .actions button { margin: 0; padding: 8px 10px; gap: 6px; align-items: baseline; }
+  .actions kbd { font-size: 11px; }
   button {
     display: flex;
     justify-content: space-between;
@@ -76,8 +100,8 @@
   button:hover:not(:disabled) { background: #43474e; }
   button:disabled { opacity: .4; cursor: default; }
   kbd { color: var(--muted); font-family: ui-monospace, monospace; font-size: 12px; }
-  label { display: flex; gap: 8px; align-items: center; margin: 14px 0 0; color: var(--muted); cursor: pointer; }
-  footer { margin-top: 16px; color: var(--muted); font-size: 12px; }
+  label { display: flex; gap: 8px; align-items: center; margin: 10px 0 0; color: var(--muted); cursor: pointer; }
+  footer { margin-top: 14px; color: var(--muted); font-size: 12px; }
   select {
     width: 100%;
     margin-top: 10px;
@@ -89,7 +113,7 @@
     font: inherit;
   }
   .note { margin-top: 6px; color: var(--muted); font-size: 12px; }
-  .replay { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
+  .replay { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
   .replay button { width: 34px; margin: 0; padding: 5px 0; justify-content: center; }
   .replay input { flex: 1; min-width: 0; accent-color: var(--accent); }
   .chart-head { display: flex; justify-content: space-between; align-items: center; margin-top: 10px;
@@ -97,9 +121,9 @@
   .seg { display: flex; gap: 2px; }
   .seg button { width: auto; margin: 0; padding: 2px 8px; font-size: 12px; color: var(--muted); }
   .seg button.on { background: #4a4f57; color: var(--text); }
-  #chart { display: block; width: 100%; height: 100px; margin-top: 4px; cursor: pointer; }
+  #chart { display: block; width: 100%; height: 84px; margin-top: 4px; cursor: pointer; }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; }
-  .eval { display: flex; justify-content: space-between; margin-top: 14px; font-size: 13px; color: var(--muted); }
+  .eval { display: flex; justify-content: space-between; margin-top: 12px; font-size: 13px; color: var(--muted); }
   .bar { height: 8px; margin: 6px 0 10px; border-radius: 4px; background: #f4f4f4; overflow: hidden; }
   .bar > div { height: 100%; background: #111; border-right: 1px solid #555; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -118,7 +142,7 @@
       <div class="graph-info" id="graph-info"></div>
     </div>
   </div>
-  <aside>
+  <aside class="controls">
     <h1 id="title">OMOK</h1>
     <dl class="status">
       <dt>Turn</dt><dd id="player"></dd>
@@ -126,46 +150,49 @@
       <dt>Rule</dt><dd id="rule"></dd>
     </dl>
     <div id="message"></div>
-    <button data-action="agent" id="agent-btn">AI move <kbd>A</kbd></button>
-    <button data-action="back">Move back <kbd>B</kbd></button>
-    <button data-action="reset">Reset <kbd>Space</kbd></button>
-    <button data-action="save">Save log <kbd>S</kbd></button>
+    <div class="actions">
+      <button data-action="agent" id="agent-btn">AI move <kbd>A</kbd></button>
+      <button data-action="back">Back <kbd>B</kbd></button>
+      <button data-action="reset">Reset <kbd>Space</kbd></button>
+      <button data-action="save">Save <kbd>S</kbd></button>
+    </div>
     <label><input type="checkbox" id="auto"> AI replies automatically</label>
     <label><input type="checkbox" id="numbers" checked> Show move numbers</label>
     <label><input type="checkbox" id="marks" checked> Show forbidden moves</label>
     <label><input type="checkbox" id="graph-box"> Show win-rate graph <kbd>G</kbd></label>
     <label><input type="checkbox" id="analysis"> Show AI analysis <kbd>P</kbd></label>
-    <div id="analysis-panel" hidden>
-      <select id="layer">
-        <option value="visits">Visits (search)</option>
-        <option value="prior">Prior (network)</option>
-        <option value="q">Win rate × visits</option>
-        <option value="diff">Search − network</option>
-      </select>
-      <label><input type="checkbox" id="pv" checked> Show best line</label>
-      <label><input type="checkbox" id="live" checked> Watch the search live</label>
-      <label><input type="checkbox" id="paths"> Show search paths</label>
-      <div class="eval"><span id="eval-black"></span><span id="eval-white"></span></div>
-      <div class="bar"><div id="eval-bar"></div></div>
-      <table>
-        <thead><tr><th>Move</th><th id="lines-share">Visits</th><th>Win</th><th>Prior</th></tr></thead>
-        <tbody id="lines"></tbody>
-      </table>
-      <div class="note" id="eval-sims"></div>
-      <div id="replay" hidden>
-        <div class="replay">
-          <button id="play" title="Replay the search">▶</button>
-          <input type="range" id="frame" min="0" max="0" value="0" title="Search progress">
-        </div>
-        <div class="chart-head">
-          <span>Top moves</span>
-          <span class="seg"><button data-chart="visits" class="on">Visits</button><button data-chart="win">Win</button></span>
-        </div>
-        <canvas id="chart" width="400" height="200"></canvas>
-        <div class="legend" id="legend"></div>
-      </div>
-    </div>
     <footer id="version"></footer>
+  </aside>
+  <aside id="analysis-panel" hidden>
+    <h2>AI analysis</h2>
+    <select id="layer">
+      <option value="visits">Visits (search)</option>
+      <option value="prior">Prior (network)</option>
+      <option value="q">Win rate × visits</option>
+      <option value="diff">Search − network</option>
+    </select>
+    <label><input type="checkbox" id="pv" checked> Show best line</label>
+    <label><input type="checkbox" id="live" checked> Watch the search live</label>
+    <label><input type="checkbox" id="paths"> Show search paths</label>
+    <div class="eval"><span id="eval-black"></span><span id="eval-white"></span></div>
+    <div class="bar"><div id="eval-bar"></div></div>
+    <table>
+      <thead><tr><th>Move</th><th id="lines-share">Visits</th><th>Win</th><th>Prior</th></tr></thead>
+      <tbody id="lines"></tbody>
+    </table>
+    <div class="note" id="eval-sims"></div>
+    <div id="replay" hidden>
+      <div class="replay">
+        <button id="play" title="Replay the search">▶</button>
+        <input type="range" id="frame" min="0" max="0" value="0" title="Search progress">
+      </div>
+      <div class="chart-head">
+        <span>Top moves</span>
+        <span class="seg"><button data-chart="visits" class="on">Visits</button><button data-chart="win">Win</button></span>
+      </div>
+      <canvas id="chart" width="468" height="168"></canvas>
+      <div class="legend" id="legend"></div>
+    </div>
   </aside>
 </main>
 <script>
@@ -629,6 +656,7 @@ function renderAnalysis(line) {
   const live = liveMode();
   const panel = document.getElementById('analysis-panel');
   panel.hidden = !analysisBox.checked || !game.agent;
+  document.querySelector('main').classList.toggle('with-analysis', !panel.hidden);
   if (panel.hidden) return;
   const replay = document.getElementById('replay');
   replay.hidden = !live;
