@@ -299,10 +299,12 @@ canvas.addEventListener('mousemove', e => {
   if (pos !== hover) { hover = pos; render(); }
 });
 canvas.addEventListener('mouseleave', () => { hover = -1; render(); });
-canvas.addEventListener('click', e => {
+canvas.addEventListener('click', async e => {
   const pos = posFromEvent(e);
-  if (!game || !canPlay(pos)) return;
-  send('move', {pos, reply: autoBox.checked && game.agent});
+  if (busy || !game || !canPlay(pos)) return;
+  // Render the player's stone first, then ask the AI in a separate request.
+  await send('move', {pos});
+  if (autoBox.checked && game.agent && !game.done) await send('agent');
 });
 
 document.querySelectorAll('button[data-action]').forEach(b =>
