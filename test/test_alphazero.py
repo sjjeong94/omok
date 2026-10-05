@@ -173,6 +173,12 @@ def test_web_ui_live_search():
     json.dumps(frames)
     status = game.handle('agent', {})  # plays the watched search
     assert status['moves'][-1] in [line['pos'] for line in frames[-1]['lines']]
+    r = game.handle('search', {'final': True})  # a new search for the new position: only its result is wanted
+    while not r['done']:
+        assert r['frames'] == []
+        r = game.handle('search', {'final': True})
+    assert len(r['frames']) == 1 and r['frames'][0]['simulations'] == 32
+    game.handle('move', {'pos': 0})
     game.handle('search', {})  # a new search for the new position...
     game.handle('back', {})  # ...is stopped by a change of position
     assert game.job is None
@@ -190,10 +196,11 @@ def test_get_values():
 def test_web_ui_win_rates():
     a = agent(simulations=16)
     game = omok.OmokGame(agent=a, rule='renju')
-    status = game.handle('move', {'pos': 112, 'graph': True})
-    assert len(status['win_rates']['network']) == 2 and status['win_rates']['search'] == [None, None]
-    status = game.handle('agent', {'graph': True})  # searched the position after move 1
-    rates = status['win_rates']
+    game.handle('move', {'pos': 112})
+    rates = game.handle('graph', {})
+    assert len(rates['network']) == 2 and rates['search'] == [None, None] and rates['pending'] == 0
+    game.handle('agent', {})  # searched the position after move 1
+    rates = game.handle('graph', {})
     assert len(rates['network']) == 3 and all(0 <= v <= 1 for v in rates['network'])
     assert rates['search'][0] is None and 0 <= rates['search'][1] <= 1 and rates['search'][2] is None
     # Black's chance from the search's value for White (the player to move after move 1)
@@ -204,4 +211,14 @@ def test_web_ui_win_rates():
     for pos in [0, 15, 1, 16, 2, 17, 3, 18, 4]:
         game.move(pos)
     rates = game.get_win_rates()
-    assert len(rates['network']) == 10 and rates['network'][-1] == 1.0
+    assert len(rates['network']) == 10 and rates['network'][-1] == 1.0 and rates['pending'] == 0
+
+
+def test_web_ui_win_rates_in_steps():
+    game = omok.OmokGame(agent=agent(), rule='renju')
+    for pos in [112, 113, 127, 97, 128, 126, 98, 142, 143, 111, 99, 84]:
+        game.move(pos)
+    rates = game.handle('graph', {})  # 13 positions, 8 per request, from the start
+    assert rates['pending'] == 5 and None not in rates['network'][:8] and rates['network'][8:] == [None] * 5
+    rates = game.handle('graph', {})
+    assert rates['pending'] == 0 and None not in rates['network']

@@ -50,8 +50,9 @@ class OmokGame:
     def can_watch(self):
         return getattr(self.agent, 'simulations', 0) > 0 and hasattr(self.agent, 'watch')
 
-    def watch_search(self, since=0):
-        """Start (or continue) a live search of the current position; returns its frames from `since` on."""
+    def watch_search(self, since=0, final=False):
+        """Start (or continue) a live search of the current position; returns its frames from `since` on
+        (or, with `final`, only the last one, once the search is done)."""
         if not self.can_watch():
             return None
         moves = self.env.get_move_history()
@@ -62,7 +63,8 @@ class OmokGame:
             self.job = SearchJob(self.agent, self.env)
         job = self.job
         done = job.done  # read before the frames, so a finished job's frames are all there
-        return {'moves': len(moves), 'frames': job.frames[since:], 'done': done, 'total': self.agent.simulations}
+        frames = (job.frames[-1:] if done else []) if final else job.frames[since:]
+        return {'moves': len(moves), 'frames': frames, 'done': done, 'total': self.agent.simulations}
 
     def stop_search(self):
         if self.job is not None:
@@ -74,7 +76,7 @@ class OmokGame:
         if self.job is not None:
             self.job.thread.join()
 
-    def get_status(self, probs=False, analysis=False, graph=False):
+    def get_status(self, probs=False, analysis=False):
         status = {
             'state': self.env.get_state().reshape(-1).tolist(),
             'player': self.env.get_player(),
@@ -96,14 +98,15 @@ class OmokGame:
                 self.env.get_state(), self.env.get_player()).round(4).tolist()
         if analysis and self.agent is not None and not self.env.is_done():
             status['analysis'] = self.get_analysis()
-        if graph and hasattr(self.agent, 'get_values'):
-            status['win_rates'] = self.get_win_rates()
         return status
 
-    def get_win_rates(self):
+    def get_win_rates(self, budget=None):
         """Black's winning chances in each position of the game (index i: after i moves), in [0, 1]:
         'network', the network's estimate (or the result, once the game is over), and 'search', the value of the
-        agent's search of the position (None where it did not search)."""
+        agent's search of the position (None where it did not search).
+
+        The network evaluates at most `budget` new positions, from the start of the game on; the rest are None
+        for now, and 'pending' counts them."""
         env, positions = self.env.clone(), []
         while True:
             positions.append((env.get_state().copy(), env.get_player(), env.is_done(), env.get_winner()))
@@ -111,8 +114,9 @@ class OmokGame:
                 break
             env.move_back()
         positions.reverse()
-        new = [(state, player) for state, player, done, _ in positions
-               if not done and position_key(state, player) not in self.values]
+        missing = [(state, player) for state, player, done, _ in positions
+                   if not done and position_key(state, player) not in self.values]
+        new = missing[:budget]
         self.values.update(zip((position_key(*p) for p in new), self.agent.get_values(new)))
 
         def black(value, player):  # a value for the player to move, as Black's winning chance
@@ -124,10 +128,11 @@ class OmokGame:
                 network.append({PLAYER_BLACK: 1.0, PLAYER_WHITE: 0.0}.get(winner, 0.5))
                 search.append(None)
                 continue
-            network.append(black(self.values[position_key(state, player)], player))
+            value = self.values.get(position_key(state, player))
+            network.append(None if value is None else black(value, player))
             value = self.agent.get_search_value(state, player) if hasattr(self.agent, 'get_search_value') else None
             search.append(None if value is None else black(value, player))
-        return {'network': network, 'search': search}
+        return {'network': network, 'search': search, 'pending': len(missing) - len(new)}
 
     def get_analysis(self):
         state, player = self.env.get_state(), self.env.get_player()
@@ -158,7 +163,9 @@ class OmokGame:
     def handle(self, action, body):
         with self.lock:
             if action == 'search':
-                return self.watch_search(int(body.get('since', 0)))
+                return self.watch_search(int(body.get('since', 0)), bool(body.get('final')))
+            if action == 'graph':  # a few positions per request, so that moves are not held up for long
+                return self.get_win_rates(budget=8) if hasattr(self.agent, 'get_values') else None
             if action in ('move', 'back', 'reset'):
                 self.stop_search()
             elif action == 'agent' or body.get('analysis') or body.get('probs'):
@@ -179,7 +186,7 @@ class OmokGame:
                 return {'file': self.save_log()}
             else:
                 return None
-            return self.get_status(probs=body.get('probs'), analysis=body.get('analysis'), graph=body.get('graph'))
+            return self.get_status(probs=body.get('probs'), analysis=body.get('analysis'))
 
     def make_handler(self):
         game = self

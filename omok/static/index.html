@@ -188,6 +188,8 @@ const chart = document.getElementById('chart');
 const graphBox = document.getElementById('graph-box');
 const graph = document.getElementById('graph');
 let graphHover = -1;  // the position hovered in the win-rate graph
+let winRates = null;  // the last win rates fetched, with the moves of the game they are for
+let graphToken = 0;
 let game = null;
 let hover = -1;
 let focus = -1;  // the candidate move hovered in the analysis table
@@ -208,7 +210,7 @@ async function api(action, body) {
   const res = await fetch('/api/' + action, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({analysis: analysisBox.checked && !liveMode(), graph: graphBox.checked, ...body}),
+    body: JSON.stringify({analysis: analysisBox.checked && !searchMode(), ...body}),
   });
   return res.json();
 }
@@ -230,13 +232,20 @@ async function send(action, body) {
     }
     render();
     startWatch();
+    fetchGraph();
   } finally {
     busy = false;
   }
 }
 
+// With an agent that can search in the background, its analyses come from a search the page follows (and that a
+// move stops at once); 'live' shows every step of it, otherwise just the result.
+function searchMode() {
+  return analysisBox.checked && !!game && !!game.watch;
+}
+
 function liveMode() {
-  return analysisBox.checked && liveBox.checked && !!game && !!game.watch;
+  return searchMode() && liveBox.checked;
 }
 
 // Follow the server's search of the current position, showing each new frame.
@@ -246,7 +255,7 @@ function startWatch() {
   frames = [];
   shown = -1;
   searchDone = false;
-  watching = liveMode() && !game.done ? watch(token) : null;
+  watching = searchMode() && !game.done ? watch(token) : null;
 }
 
 async function watch(token) {
@@ -254,7 +263,7 @@ async function watch(token) {
   for (;;) {
     let r;
     try {
-      r = await api('search', {since: frames.length});
+      r = await api('search', {since: frames.length, final: !liveMode()});
     } catch {
       return false;
     }
@@ -302,7 +311,15 @@ async function aiMove() {
     thinking = false;
     if (!finished) return render();
   }
-  await send('agent');
+  await act('agent');
+}
+
+// Change the position, showing it at once; a (non-live) analysis of the new position, which takes a search,
+// follows in a request of its own.
+async function act(action, body, analyze = true) {
+  const deferred = analyze && analysisBox.checked && !searchMode();
+  await send(action, {...body, analysis: false});
+  if (deferred && game && !game.done) await send('state');
 }
 
 const center = i => CELL / 2 + i * CELL;
@@ -422,18 +439,54 @@ function drawPaths(paths) {
 }
 
 const GRAPH_PAD = 8;
+const graphSpan = last => Math.max(last, 30) * 1.08;  // positions across the graph, leaving room for its labels
 const blackShare = (value, player) => player === 1 ? (1 + value) / 2 : (1 - value) / 2;
+
+// Fetch the win rates of the game's positions; the server evaluates a few new positions per request.
+async function fetchGraph() {
+  if (!graphBox.checked || !game || !game.graph) return;
+  const token = ++graphToken, moves = game.moves.slice();
+  for (;;) {
+    let r;
+    try {
+      r = await api('graph', {});
+    } catch {
+      return;
+    }
+    if (token !== graphToken || !r || r.network.length !== moves.length + 1) return;
+    winRates = {...r, moves};
+    render();
+    if (!r.pending) return;
+  }
+}
+
+// The fetched win rates that still hold for the game on the board (up to the last move in common).
+function currentWinRates() {
+  const n = game.moves.length + 1, network = [], search = [];
+  let common = 0;
+  if (winRates) {
+    while (common < winRates.moves.length && common < game.moves.length
+           && winRates.moves[common] === game.moves[common]) common++;
+  }
+  for (let i = 0; i < n; i++) {
+    const known = !!winRates && i <= common && i < winRates.network.length;
+    network.push(known ? winRates.network[i] : null);
+    search.push(known ? winRates.search[i] : null);
+  }
+  return {network, search};
+}
 
 // Black's winning chances over the game: the network's estimate of every position (filled dark where Black
 // leads, light where White does) and, as dots, the value of each search the AI ran.
 function drawGraph() {
-  const on = graphBox.checked && !!game.graph && !!game.win_rates;
+  const on = graphBox.checked && !!game.graph;
   document.getElementById('graph-wrap').hidden = !on;
   document.querySelector('main').classList.toggle('with-graph', on);
   if (!on) return;
-  const {network} = game.win_rates;
-  const search = game.win_rates.search.slice();
+  const {network, search} = currentWinRates();
   const last = network.length - 1;
+  let known = network.indexOf(null);  // the positions evaluated so far (from the start)
+  if (known < 0) known = network.length;
   const a = game.analysis;  // the current position's search as shown, also while it runs
   if (a && a.visits && !game.done) search[last] = blackShare(a.value, game.player);
 
@@ -443,19 +496,20 @@ function drawGraph() {
     graph.width = Math.round(w * dpr);
     graph.height = Math.round(h * dpr);
   }
-  const g = graph.getContext('2d'), n = Math.max(last, 30);
+  const g = graph.getContext('2d'), n = graphSpan(last);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   const x = i => GRAPH_PAD + (w - 2 * GRAPH_PAD) * i / n;
   const y = v => GRAPH_PAD + (h - 2 * GRAPH_PAD) * (1 - v);
   g.clearRect(0, 0, w, h);
+  const curve = network.slice(0, known);
   const area = () => {
     g.beginPath();
     g.moveTo(x(0), y(0.5));
-    network.forEach((v, i) => g.lineTo(x(i), y(v)));
-    g.lineTo(x(last), y(0.5));
+    curve.forEach((v, i) => g.lineTo(x(i), y(v)));
+    g.lineTo(x(known - 1), y(0.5));
     g.closePath();
   };
-  for (const [top, bottom, color] of [[0, y(0.5), 'rgba(0, 0, 0, 0.6)'], [y(0.5), h, 'rgba(240, 240, 240, 0.8)']]) {
+  for (const [top, bottom, color] of known ? [[0, y(0.5), 'rgba(0, 0, 0, 0.6)'], [y(0.5), h, 'rgba(240, 240, 240, 0.8)']] : []) {
     g.save();
     g.beginPath(); g.rect(0, top, w, bottom - top); g.clip();
     area(); g.fillStyle = color; g.fill();
@@ -475,7 +529,7 @@ function drawGraph() {
   g.strokeStyle = '#9a9ea5';
   g.lineWidth = 1.5;
   g.beginPath();
-  network.forEach((v, i) => (i ? g.lineTo : g.moveTo).call(g, x(i), y(v)));
+  curve.forEach((v, i) => (i ? g.lineTo : g.moveTo).call(g, x(i), y(v)));
   g.stroke();
   search.forEach((v, i) => {
     if (v === null) return;
@@ -491,7 +545,8 @@ function drawGraph() {
   g.beginPath(); g.moveTo(x(at), GRAPH_PAD); g.lineTo(x(at), h - GRAPH_PAD); g.stroke();
   const where = at === 0 ? 'Start' : `Move ${at} (${coord(game.moves[at - 1])})`;
   const result = game.done && at === last;
-  document.getElementById('graph-info').textContent = `${where} · ${result ? 'result' : 'network'}: Black ${pct(network[at])}`
+  document.getElementById('graph-info').textContent = `${where} · ${result ? 'result' : 'network'}: `
+    + (network[at] === null ? 'evaluating…' : `Black ${pct(network[at])}`)
     + (search[at] !== null ? ` · search: Black ${pct(search[at])}` : '');
 }
 
@@ -573,7 +628,7 @@ function renderAnalysis(line) {
   const a = game.analysis;
   const live = liveMode();
   const panel = document.getElementById('analysis-panel');
-  panel.hidden = !analysisBox.checked || !game.agent || (!a && !live);
+  panel.hidden = !analysisBox.checked || !game.agent;
   if (panel.hidden) return;
   const replay = document.getElementById('replay');
   replay.hidden = !live;
@@ -587,7 +642,7 @@ function renderAnalysis(line) {
   }
   const rows = document.getElementById('lines');
   if (!a) {
-    document.getElementById('eval-black').textContent = isOver() ? 'Game over' : 'Searching…';
+    document.getElementById('eval-black').textContent = isOver() ? 'Game over' : thinking ? 'AI is thinking…' : live ? 'Searching…' : 'Analyzing…';
     document.getElementById('eval-white').textContent = '';
     document.getElementById('eval-sims').textContent = '';
     document.getElementById('eval-bar').style.width = '50%';
@@ -750,7 +805,7 @@ canvas.addEventListener('click', async e => {
   if (busy || !game || !canPlay(pos)) return;
   // Render the player's stone first, then ask the AI in a separate request.
   const reply = autoBox.checked && game.agent;
-  await send('move', {pos, analysis: analysisBox.checked && !reply && !liveMode()});  // no search before the stone
+  await act('move', {pos}, !reply);  // with a reply, analyse only the position after it
   if (reply && !game.done) await aiMove();
 });
 
@@ -763,25 +818,30 @@ linesBody.addEventListener('mouseover', e => {
 linesBody.addEventListener('mouseleave', () => { focus = -1; render(); });
 
 document.querySelectorAll('button[data-action]').forEach(b =>
-  b.addEventListener('click', () => b.dataset.action === 'agent' ? aiMove() : send(b.dataset.action)));
+  b.addEventListener('click', () => {
+    const action = b.dataset.action;
+    if (action === 'agent') aiMove();
+    else if (action === 'save') send(action);
+    else act(action);
+  }));
 numbersBox.addEventListener('change', render);
 marksBox.addEventListener('change', render);
 // Switch between the live search and a plain analysis of the position.
 function analysisChanged() {
   startWatch();
-  if (analysisBox.checked && !liveMode()) send('state');
+  if (analysisBox.checked && !searchMode()) send('state');
   else render();
 }
 analysisBox.addEventListener('change', analysisChanged);
 liveBox.addEventListener('change', analysisChanged);
 pathsBox.addEventListener('change', render);
-graphBox.addEventListener('change', () => graphBox.checked ? send('state') : render());
+graphBox.addEventListener('change', () => { render(); fetchGraph(); });
 graph.addEventListener('mousemove', e => {
-  if (!game || !game.win_rates) return;
+  if (!game || !game.graph) return;
   const rect = graph.getBoundingClientRect();
-  const n = Math.max(game.win_rates.network.length - 1, 30);
+  const n = graphSpan(game.moves.length);
   const i = Math.round((e.clientX - rect.left - GRAPH_PAD) / (rect.width - 2 * GRAPH_PAD) * n);
-  const at = Math.max(0, Math.min(game.win_rates.network.length - 1, i));
+  const at = Math.max(0, Math.min(game.moves.length, i));
   if (at !== graphHover) { graphHover = at; render(); }
 });
 graph.addEventListener('mouseleave', () => { graphHover = -1; render(); });
@@ -823,7 +883,8 @@ document.addEventListener('keydown', e => {
   if (!action) return;
   e.preventDefault();
   if (action === 'agent') return aiMove();
-  send(action);
+  if (action === 'save') return send(action);
+  act(action);
 });
 
 send('state');
