@@ -37,6 +37,9 @@ Click the board to place a stone. Keyboard shortcuts: `A` (AI move), `B` (undo),
 Turn on `Show AI analysis` (shortcut `P`) to see what the AI thinks of the current turn:
 a heatmap layer on the board (search visits, network prior, win rate × visits, or where the search disagrees with the network),
 the best line it expects (hover a move on the board or in the candidate table to see that move's line), and a win-rate bar.
+With `Watch the search live` (on by default) the search runs in the background and the board updates after every batch of
+simulations, so you see the AI think before it moves. Afterwards, replay or scrub the search with the slider, follow the
+top moves' visit shares or win rates in the chart, and turn on `Show search paths` to see where each batch went.
 
 ```bash
 $ python -m omok --simulations 0            # the AlphaZero network alone, no search (default: 200 simulations per move)
@@ -132,7 +135,8 @@ with an optional PUCT search (numpy only). Over 100 games from random 4-move ope
 
 (score: win 1, draw 0.5, loss 0; half of the games as each color). A search of 200 simulations takes about 1 s per move on a CPU.
 `get_probs` returns the network's probabilities averaged over the 8 symmetries (`simulations=0`) or the search's visit shares.
-`get_analysis` returns what the web UI's analysis shows: the prior, visit shares and win rate (Q) of each move, the position's value, and the candidate moves with their principal variations.
+`get_analysis` returns what the web UI's analysis shows: the prior, visit shares and win rate (Q) of each move, the position's value, and the candidate moves with their principal variations;
+`watch(state, player, on_frame)` runs a fresh search and calls `on_frame` with that analysis after every batch of simulations.
 
 Reinforcement Learning
 ```python

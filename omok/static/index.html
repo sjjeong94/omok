@@ -84,6 +84,16 @@
     font: inherit;
   }
   .note { margin-top: 6px; color: var(--muted); font-size: 12px; }
+  .replay { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
+  .replay button { width: 34px; margin: 0; padding: 5px 0; justify-content: center; }
+  .replay input { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .chart-head { display: flex; justify-content: space-between; align-items: center; margin-top: 10px;
+                font-size: 12px; color: var(--muted); }
+  .seg { display: flex; gap: 2px; }
+  .seg button { width: auto; margin: 0; padding: 2px 8px; font-size: 12px; color: var(--muted); }
+  .seg button.on { background: #4a4f57; color: var(--text); }
+  #chart { display: block; width: 100%; height: 100px; margin-top: 4px; cursor: pointer; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; }
   .eval { display: flex; justify-content: space-between; margin-top: 14px; font-size: 13px; color: var(--muted); }
   .bar { height: 8px; margin: 6px 0 10px; border-radius: 4px; background: #f4f4f4; overflow: hidden; }
   .bar > div { height: 100%; background: #111; border-right: 1px solid #555; }
@@ -121,6 +131,8 @@
         <option value="diff">Search − network</option>
       </select>
       <label><input type="checkbox" id="pv" checked> Show best line</label>
+      <label><input type="checkbox" id="live" checked> Watch the search live</label>
+      <label><input type="checkbox" id="paths"> Show search paths</label>
       <div class="eval"><span id="eval-black"></span><span id="eval-white"></span></div>
       <div class="bar"><div id="eval-bar"></div></div>
       <table>
@@ -128,6 +140,18 @@
         <tbody id="lines"></tbody>
       </table>
       <div class="note" id="eval-sims"></div>
+      <div id="replay" hidden>
+        <div class="replay">
+          <button id="play" title="Replay the search">▶</button>
+          <input type="range" id="frame" min="0" max="0" value="0" title="Search progress">
+        </div>
+        <div class="chart-head">
+          <span>Top moves</span>
+          <span class="seg"><button data-chart="visits" class="on">Visits</button><button data-chart="win">Win</button></span>
+        </div>
+        <canvas id="chart" width="400" height="200"></canvas>
+        <div class="legend" id="legend"></div>
+      </div>
     </div>
     <footer id="version"></footer>
   </aside>
@@ -144,16 +168,32 @@ const marksBox = document.getElementById('marks');
 const analysisBox = document.getElementById('analysis');
 const layerSelect = document.getElementById('layer');
 const pvBox = document.getElementById('pv');
+const liveBox = document.getElementById('live');
+const pathsBox = document.getElementById('paths');
+const frameSlider = document.getElementById('frame');
+const playBtn = document.getElementById('play');
+const chart = document.getElementById('chart');
 let game = null;
 let hover = -1;
 let focus = -1;  // the candidate move hovered in the analysis table
 let busy = false;
 
+// The live search: its frames (one analysis per batch of simulations) and the one shown.
+let frames = [];
+let shown = -1;
+let searchTotal = 0;
+let searchDone = false;
+let watchToken = 0;
+let watching = null;  // resolves to whether the watched search finished
+let thinking = false;  // waiting for the watched search before the AI moves
+let playTimer = null;
+let chartMode = 'visits';
+
 async function api(action, body) {
   const res = await fetch('/api/' + action, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({analysis: analysisBox.checked, ...body}),
+    body: JSON.stringify({analysis: analysisBox.checked && !liveMode(), ...body}),
   });
   return res.json();
 }
@@ -174,9 +214,80 @@ async function send(action, body) {
       hover = -1;
     }
     render();
+    startWatch();
   } finally {
     busy = false;
   }
+}
+
+function liveMode() {
+  return analysisBox.checked && liveBox.checked && !!game && !!game.watch;
+}
+
+// Follow the server's search of the current position, showing each new frame.
+function startWatch() {
+  stopPlay();
+  const token = ++watchToken;
+  frames = [];
+  shown = -1;
+  searchDone = false;
+  watching = liveMode() && !game.done ? watch(token) : null;
+}
+
+async function watch(token) {
+  const moves = game.moves.length;
+  for (;;) {
+    let r;
+    try {
+      r = await api('search', {since: frames.length});
+    } catch {
+      return false;
+    }
+    if (token !== watchToken || !r || r.moves !== moves) return false;
+    searchTotal = r.total;
+    searchDone = r.done;
+    frames.push(...r.frames);
+    if (r.frames.length || r.done) showFrame(frames.length - 1);
+    if (r.done) return true;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+}
+
+function showFrame(i) {
+  shown = i;
+  game.analysis = frames[i];
+  render();
+}
+
+function stopPlay() {
+  clearInterval(playTimer);
+  playTimer = null;
+  playBtn.textContent = '▶';
+}
+
+function play() {
+  if (playTimer) return stopPlay();
+  if (!frames.length) return;
+  let i = shown >= frames.length - 1 ? 0 : shown;
+  showFrame(i);
+  playBtn.textContent = '❚❚';
+  playTimer = setInterval(() => {
+    if (++i >= frames.length) return stopPlay();
+    showFrame(i);
+  }, Math.max(30, Math.min(150, 3000 / frames.length)));
+}
+
+// After the watched search (if any), so the AI plays the search that was shown.
+async function aiMove() {
+  if (thinking || !game || !game.agent || game.done) return;
+  if (watching) {
+    thinking = true;
+    render();
+    const finished = await watching;
+    thinking = false;
+    if (!finished) return render();
+  }
+  await send('agent');
 }
 
 const center = i => CELL / 2 + i * CELL;
@@ -282,6 +393,70 @@ function drawLine(pv, player, start) {
   });
 }
 
+// The walks of the shown batch, each in its own color, ending in a dot at the leaf it reached.
+function drawPaths(paths) {
+  paths.forEach((path, k) => {
+    ctx.strokeStyle = ctx.fillStyle = `hsla(${k * 360 / paths.length}, 80%, 35%, 0.75)`;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    path.forEach((pos, i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, center(pos % SIZE), center(Math.floor(pos / SIZE))));
+    ctx.stroke();
+    circle(path[path.length - 1], CELL * 0.11);
+    ctx.fill();
+  });
+}
+
+const CHART_COLORS = ['#3ddc84', '#4ea1ff', '#ffb74d', '#ef6fa0'];
+const CHART_PAD = {left: 56, right: 8, top: 10, bottom: 10};
+
+// The final top moves' visit shares (or win rates) against the number of simulations.
+function drawChart() {
+  const g = chart.getContext('2d'), w = chart.width, h = chart.height;
+  g.clearRect(0, 0, w, h);
+  const legend = document.getElementById('legend');
+  if (!frames.length) { legend.innerHTML = ''; return; }
+  const last = frames[frames.length - 1];
+  const top = last.lines.slice(0, 4).map(l => l.pos);
+  const value = (f, pos) => chartMode === 'visits' ? f.visits[pos] : f.q[pos] === null ? null : (f.q[pos] + 1) / 2;
+  const values = frames.flatMap(f => top.map(pos => value(f, pos))).filter(v => v !== null);
+  let lo = chartMode === 'visits' ? 0 : Math.floor(Math.min(...values) * 10) / 10;
+  let hi = Math.ceil(Math.max(...values) * 10) / 10;
+  if (!(hi > lo)) { lo = Math.max(0, lo - 0.1); hi = lo + 0.2; }
+  const x = sims => CHART_PAD.left + (w - CHART_PAD.left - CHART_PAD.right) * sims / last.simulations;
+  const y = v => h - CHART_PAD.bottom - (h - CHART_PAD.top - CHART_PAD.bottom) * (v - lo) / (hi - lo);
+
+  g.font = '20px system-ui, sans-serif';
+  g.textAlign = 'right';
+  g.textBaseline = 'middle';
+  g.lineWidth = 1;
+  for (const v of [lo, (lo + hi) / 2, hi]) {
+    g.strokeStyle = '#3a3e45';
+    g.beginPath(); g.moveTo(CHART_PAD.left, y(v)); g.lineTo(w - CHART_PAD.right, y(v)); g.stroke();
+    g.fillStyle = '#9a9ea5';
+    g.fillText(Math.round(v * 100) + '%', CHART_PAD.left - 8, y(v));
+  }
+  if (shown >= 0) {
+    g.strokeStyle = '#9a9ea5';
+    g.setLineDash([4, 4]);
+    g.beginPath(); g.moveTo(x(frames[shown].simulations), CHART_PAD.top); g.lineTo(x(frames[shown].simulations), h - CHART_PAD.bottom); g.stroke();
+    g.setLineDash([]);
+  }
+  top.forEach((pos, k) => {
+    g.strokeStyle = CHART_COLORS[k];
+    g.lineWidth = 3;
+    g.beginPath();
+    let pen = false;
+    for (const f of frames) {
+      const v = value(f, pos);
+      if (v === null) { pen = false; continue; }
+      (pen ? g.lineTo : g.moveTo).call(g, x(f.simulations), y(v));
+      pen = true;
+    }
+    g.stroke();
+  });
+  legend.innerHTML = top.map((pos, k) => `<span style="color:${CHART_COLORS[k]}">● ${coord(pos)}</span>`).join('');
+}
+
 function layer() {
   return game.analysis.visits ? layerSelect.value : 'prior';
 }
@@ -307,9 +482,30 @@ const win = q => q === null || q === undefined ? '—' : Math.round((q + 1) * 50
 
 function renderAnalysis(line) {
   const a = game.analysis;
+  const live = liveMode();
   const panel = document.getElementById('analysis-panel');
-  panel.hidden = !analysisBox.checked || !a;
+  panel.hidden = !analysisBox.checked || !game.agent || (!a && !live);
   if (panel.hidden) return;
+  const replay = document.getElementById('replay');
+  replay.hidden = !live;
+  pathsBox.disabled = !live;
+  liveBox.disabled = !game.watch;
+  if (live) {
+    frameSlider.max = Math.max(0, frames.length - 1);
+    frameSlider.value = Math.max(0, shown);
+    frameSlider.disabled = playBtn.disabled = !searchDone || frames.length < 2;
+    drawChart();
+  }
+  const rows = document.getElementById('lines');
+  if (!a) {
+    document.getElementById('eval-black').textContent = isOver() ? 'Game over' : 'Searching…';
+    document.getElementById('eval-white').textContent = '';
+    document.getElementById('eval-sims').textContent = '';
+    document.getElementById('eval-bar').style.width = '50%';
+    rows.innerHTML = '';
+    rows.analysis = null;
+    return;
+  }
   const search = !!a.visits;
   [...layerSelect.options].forEach(o => { o.disabled = !search && o.value !== 'prior'; });
   layerSelect.value = layer();
@@ -320,11 +516,11 @@ function renderAnalysis(line) {
   const black = game.player === 1 ? mine : 1 - mine;
   document.getElementById('eval-black').textContent = known ? `Black ${Math.round(black * 100)}%` : 'No evaluation';
   document.getElementById('eval-white').textContent = known ? `${Math.round((1 - black) * 100)}% White` : '';
-  document.getElementById('eval-sims').textContent = search
-    ? `${a.simulations} simulations · hover a move for its line` : 'Network only (no search)';
+  document.getElementById('eval-sims').textContent = !search ? 'Network only (no search)'
+    : live ? `${a.simulations} / ${searchTotal} simulations${thinking ? ' · AI is thinking' : ''}`
+    : `${a.simulations} simulations · hover a move for its line`;
   document.getElementById('eval-bar').style.width = black * 100 + '%';
 
-  const rows = document.getElementById('lines');
   if (rows.analysis !== a) {  // rebuild only for a new analysis, so hovering a row keeps working
     rows.analysis = a;
     document.getElementById('lines-share').textContent = search ? 'Visits' : '';
@@ -370,7 +566,7 @@ function isOver() {
 }
 
 function canPlay(pos) {
-  return pos >= 0 && !isOver() && game.state[pos] === 0 && !game.forbidden.includes(pos);
+  return pos >= 0 && !thinking && !isOver() && game.state[pos] === 0 && !game.forbidden.includes(pos);
 }
 
 function render() {
@@ -404,6 +600,7 @@ function render() {
   const line = shownLine();
   if (!over && analysisBox.checked && game.analysis) {
     drawAnalysis(game.analysis, new Set(line ? line.pv : []));
+    if (pathsBox.checked && liveMode() && game.analysis.paths) drawPaths(game.analysis.paths);
     if (line) drawLine(line.pv, player, moves.length + 1);
   }
 
@@ -430,7 +627,7 @@ function render() {
   document.getElementById('message').innerHTML = winner
     ? name(winner) + ' wins!'
     : over ? 'Draw' : '';
-  document.getElementById('agent-btn').disabled = !game.agent || over;
+  document.getElementById('agent-btn').disabled = !game.agent || over || thinking;
   autoBox.disabled = !game.agent;
   analysisBox.disabled = !game.agent;
   renderAnalysis(line);
@@ -454,8 +651,8 @@ canvas.addEventListener('click', async e => {
   if (busy || !game || !canPlay(pos)) return;
   // Render the player's stone first, then ask the AI in a separate request.
   const reply = autoBox.checked && game.agent;
-  await send('move', {pos, analysis: analysisBox.checked && !reply});  // no search before the stone shows
-  if (reply && !game.done) await send('agent');
+  await send('move', {pos, analysis: analysisBox.checked && !reply && !liveMode()});  // no search before the stone
+  if (reply && !game.done) await aiMove();
 });
 
 const linesBody = document.getElementById('lines');
@@ -467,10 +664,36 @@ linesBody.addEventListener('mouseover', e => {
 linesBody.addEventListener('mouseleave', () => { focus = -1; render(); });
 
 document.querySelectorAll('button[data-action]').forEach(b =>
-  b.addEventListener('click', () => send(b.dataset.action)));
+  b.addEventListener('click', () => b.dataset.action === 'agent' ? aiMove() : send(b.dataset.action)));
 numbersBox.addEventListener('change', render);
 marksBox.addEventListener('change', render);
-analysisBox.addEventListener('change', () => analysisBox.checked ? send('state') : render());
+// Switch between the live search and a plain analysis of the position.
+function analysisChanged() {
+  startWatch();
+  if (analysisBox.checked && !liveMode()) send('state');
+  else render();
+}
+analysisBox.addEventListener('change', analysisChanged);
+liveBox.addEventListener('change', analysisChanged);
+pathsBox.addEventListener('change', render);
+playBtn.addEventListener('click', play);
+frameSlider.addEventListener('input', () => { stopPlay(); showFrame(+frameSlider.value); });
+document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
+  chartMode = b.dataset.chart;
+  document.querySelectorAll('.seg button').forEach(o => o.classList.toggle('on', o === b));
+  render();
+}));
+chart.addEventListener('click', e => {  // jump to the frame nearest the clicked point
+  if (!frames.length || !searchDone) return;
+  const rect = chart.getBoundingClientRect();
+  const left = CHART_PAD.left / chart.width, right = 1 - CHART_PAD.right / chart.width;
+  const t = Math.min(1, Math.max(0, ((e.clientX - rect.left) / rect.width - left) / (right - left)));
+  const sims = t * frames[frames.length - 1].simulations;
+  let best = 0;
+  frames.forEach((f, i) => { if (Math.abs(f.simulations - sims) < Math.abs(frames[best].simulations - sims)) best = i; });
+  stopPlay();
+  showFrame(best);
+});
 layerSelect.addEventListener('change', render);
 pvBox.addEventListener('change', render);
 
@@ -485,7 +708,7 @@ document.addEventListener('keydown', e => {
   }
   if (!action) return;
   e.preventDefault();
-  if (action === 'agent' && (!game || !game.agent)) return;
+  if (action === 'agent') return aiMove();
   send(action);
 });
 

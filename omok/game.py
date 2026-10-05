@@ -10,11 +10,66 @@ from omok import Omok, Connect6
 from omok.version import VERSION
 
 
+class SearchJob:
+    """A search of one position running in the background, keeping a frame of its progress per batch."""
+
+    def __init__(self, agent, env):
+        self.moves = env.get_move_history()
+        self.frames = []
+        self.stopped = threading.Event()
+        state, player = env.get_state(), env.get_player()
+        self.thread = threading.Thread(target=self.run, args=(agent, state, player), daemon=True)
+        self.thread.start()
+
+    def run(self, agent, state, player):
+        agent.watch(state, player, self.on_frame)
+
+    def on_frame(self, frame):
+        self.frames.append(frame)
+        return not self.stopped.is_set()
+
+    @property
+    def done(self):
+        return not self.thread.is_alive()
+
+    def stop(self):
+        self.stopped.set()
+        self.thread.join()
+
+
 class OmokGame:
     def __init__(self, agent=None, rule='renju', env=None):
         self.env = Omok(rule=rule) if env is None else env
         self.agent = agent
         self.lock = threading.Lock()
+        self.job = None  # the live search being watched, if any
+
+    def can_watch(self):
+        return getattr(self.agent, 'simulations', 0) > 0 and hasattr(self.agent, 'watch')
+
+    def watch_search(self, since=0):
+        """Start (or continue) a live search of the current position; returns its frames from `since` on."""
+        if not self.can_watch():
+            return None
+        moves = self.env.get_move_history()
+        if self.env.is_done():
+            return {'moves': len(moves), 'frames': [], 'done': True, 'total': 0}
+        if self.job is None or self.job.moves != moves:
+            self.stop_search()
+            self.job = SearchJob(self.agent, self.env)
+        job = self.job
+        done = job.done  # read before the frames, so a finished job's frames are all there
+        return {'moves': len(moves), 'frames': job.frames[since:], 'done': done, 'total': self.agent.simulations}
+
+    def stop_search(self):
+        if self.job is not None:
+            self.job.stop()
+            self.job = None
+
+    def finish_search(self):
+        """Let the live search finish, so the agent uses it (it is kept in the agent's cache)."""
+        if self.job is not None:
+            self.job.thread.join()
 
     def get_status(self, probs=False, analysis=False):
         status = {
@@ -29,6 +84,7 @@ class OmokGame:
             'game': 'connect6' if isinstance(self.env, Connect6) else 'omok',
             'rule': getattr(self.env, 'rule', None),
             'agent': self.agent is not None,
+            'watch': self.can_watch(),
             'version': VERSION,
         }
         if probs and self.agent is not None and not self.env.is_done():
@@ -66,6 +122,12 @@ class OmokGame:
 
     def handle(self, action, body):
         with self.lock:
+            if action == 'search':
+                return self.watch_search(int(body.get('since', 0)))
+            if action in ('move', 'back', 'reset'):
+                self.stop_search()
+            elif action == 'agent' or body.get('analysis') or body.get('probs'):
+                self.finish_search()  # one search at a time: the agent is not thread-safe
             if action == 'state':
                 pass
             elif action == 'move':

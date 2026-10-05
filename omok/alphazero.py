@@ -109,15 +109,18 @@ class AlphaZeroAgent:
         u = self.c_puct * node.prior * np.sqrt(node.visits + 1) / (1 + node.n)
         return int(np.argmax(q + u))
 
-    def search(self, env):
-        """Run a PUCT search from `env` (left unchanged); returns the root."""
+    def search(self, env, on_batch=None):
+        """Run a PUCT search from `env` (left unchanged); returns the root.
+
+        `on_batch(root, paths)` is called after each batch of simulations with the move sequences the batch walked;
+        if it returns False the search stops there."""
         mask = env.get_legal_mask()
         probs, _ = self.evaluate(env.get_observation()[None], mask[None])
         moves = np.flatnonzero(mask)
         root = Node(moves, probs[0][moves])
         env = env.clone()
         while root.visits < self.simulations:
-            pending, taken = [], set()
+            pending, taken, paths = [], set(), []
             for _ in range(min(self.leaves, self.simulations - root.visits)):
                 node, path = root, []
                 while True:
@@ -129,6 +132,7 @@ class AlphaZeroAgent:
                     node = node.children[i]
                 if env.is_done():  # exact result: a win for the player who just moved, or a draw
                     backup(path, 0.0 if env.get_winner() == PLAYER_NONE else 1.0)
+                    paths.append(path)
                 elif (id(node), i) in taken:  # the same leaf twice: evaluate what we have
                     for _ in path:
                         env.move_back()
@@ -136,22 +140,25 @@ class AlphaZeroAgent:
                 else:
                     taken.add((id(node), i))
                     pending.append((path, env.get_observation(), env.get_legal_mask()))
+                    paths.append(path)
                     for nd, j in path:  # virtual loss: the next walk prefers another path
                         nd.n[j] += 1
                         nd.w[j] -= 1
                 for _ in path:
                     env.move_back()
-            if not pending:
-                continue
-            probs, values = self.evaluate(np.stack([p[1] for p in pending]), np.stack([p[2] for p in pending]))
-            for (path, _, mask), p, v in zip(pending, probs, values):
-                for nd, j in path:
-                    nd.n[j] -= 1
-                    nd.w[j] += 1
-                node, i = path[-1]
-                moves = np.flatnonzero(mask)
-                node.children[i] = Node(moves, p[moves])
-                backup(path, -float(v))  # v is for the player to move at the leaf, the opponent of the mover
+            if pending:
+                probs, values = self.evaluate(np.stack([p[1] for p in pending]), np.stack([p[2] for p in pending]))
+                for (path, _, mask), p, v in zip(pending, probs, values):
+                    for nd, j in path:
+                        nd.n[j] -= 1
+                        nd.w[j] += 1
+                    node, i = path[-1]
+                    moves = np.flatnonzero(mask)
+                    node.children[i] = Node(moves, p[moves])
+                    backup(path, -float(v))  # v is for the player to move at the leaf, the opponent of the mover
+            if on_batch is not None and paths:
+                if on_batch(root, [[int(nd.moves[j]) for nd, j in path] for path in paths]) is False:
+                    break
         return root
 
     def root(self, state, player):
@@ -159,6 +166,18 @@ class AlphaZeroAgent:
         if self._cache[0] != key:
             self._cache = key, self.search(env_from_state(state, player, self.rule))
         return self._cache[1]
+
+    def watch(self, state, player, on_frame, lines=10, depth=10):
+        """Search the position afresh, calling `on_frame(frame)` after each batch of simulations with the search
+        so far: a `get_analysis` dict plus 'paths', the move sequences that batch walked. `on_frame` returns False
+        to stop. A finished search is kept, so the agent then plays (and analyses) the search that was watched.
+        Returns whether the search finished."""
+        root = self.search(env_from_state(state, player, self.rule),
+                           lambda root, paths: on_frame({**analysis_of(root, lines, depth), 'paths': paths}))
+        done = root.visits >= self.simulations
+        if done:
+            self._cache = (np.asarray(state, np.uint8).tobytes(), int(player)), root
+        return done
 
     # ------------------------------------------------------------------ OmokAgent interface
 
@@ -200,24 +219,28 @@ class AlphaZeroAgent:
                 'lines': [{'pos': int(m), 'prior': round(float(prior[m]), 4), 'pv': [int(m)]}
                           for m in top if prior[m] > 0],
             }
-        root = self.root(state, player)
-        prior, visits, q = np.zeros(225), np.zeros(225), [None] * 225
-        prior[root.moves] = root.prior
-        visits[root.moves] = root.n / root.n.sum()
-        for m, n, w in zip(root.moves, root.n, root.w):
-            if n > 0:
-                q[m] = round(float(w / n), 4)
-        order = np.lexsort((-root.prior, -root.n))  # most visited first, ties by prior
-        return {
-            'simulations': int(root.visits),
-            'prior': prior.round(4).tolist(),
-            'visits': visits.round(4).tolist(),
-            'q': q,
-            'value': round(float(root.w.sum() / root.n.sum()), 4),
-            'lines': [{'pos': int(root.moves[i]), 'prior': round(float(root.prior[i]), 4),
-                       'visits': int(root.n[i]), 'q': q[root.moves[i]], 'pv': principal_variation(root, i, depth)}
-                      for i in order[:lines] if root.n[i] > 0],
-        }
+        return analysis_of(self.root(state, player), lines, depth)
+
+
+def analysis_of(root, lines=10, depth=10):
+    """`AlphaZeroAgent.get_analysis` of a searched root (values for the player to move at the root)."""
+    prior, visits, q = np.zeros(225), np.zeros(225), [None] * 225
+    prior[root.moves] = root.prior
+    visits[root.moves] = root.n / root.n.sum()
+    for m, n, w in zip(root.moves, root.n, root.w):
+        if n > 0:
+            q[m] = round(float(w / n), 4)
+    order = np.lexsort((-root.prior, -root.n))  # most visited first, ties by prior
+    return {
+        'simulations': int(root.visits),
+        'prior': prior.round(4).tolist(),
+        'visits': visits.round(4).tolist(),
+        'q': q,
+        'value': round(float(root.w.sum() / root.n.sum()), 4),
+        'lines': [{'pos': int(root.moves[i]), 'prior': round(float(root.prior[i]), 4),
+                   'visits': int(root.n[i]), 'q': q[root.moves[i]], 'pv': principal_variation(root, i, depth)}
+                  for i in order[:lines] if root.n[i] > 0],
+    }
 
 
 def principal_variation(node, i, depth):

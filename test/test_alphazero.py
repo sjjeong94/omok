@@ -131,3 +131,48 @@ def test_web_ui_analysis():
     status = game.handle('move', {'pos': 112, 'analysis': True})
     assert 'analysis' in status and status['analysis']['simulations'] == 16
     json.dumps(status)  # served as JSON
+
+
+def test_watch():
+    a = agent(simulations=48, leaves=8)
+    env = position([112, 113])
+    frames = []
+    assert a.watch(env.get_state(), env.get_player(), lambda f: frames.append(f) or True)
+    sims = [f['simulations'] for f in frames]
+    assert sims == sorted(sims) and sims[-1] == 48 and len(frames) >= 48 // 8
+    legal = env.get_legal_mask()
+    for f in frames:
+        assert f['paths'] and all(legal[p[0]] for p in f['paths'])
+    # the agent keeps the watched search: it plays its most visited move and analyses it as watched
+    assert a.get_analysis(env.get_state(), env.get_player())['visits'] == frames[-1]['visits']
+    best = max(range(225), key=lambda m: frames[-1]['visits'][m])
+    assert frames[-1]['visits'][a(env.get_state(), env.get_player())] == frames[-1]['visits'][best]
+
+
+def test_watch_stops():
+    a = agent(simulations=64, leaves=8)
+    env = position([112])
+    frames = []
+    assert not a.watch(env.get_state(), env.get_player(), lambda f: frames.append(f) or len(frames) < 2)
+    assert len(frames) == 2 and frames[-1]['simulations'] < 64
+    assert a._cache[0] is None  # an unfinished search is not kept
+
+
+def test_web_ui_live_search():
+    game = omok.OmokGame(agent=agent(simulations=32), rule='renju')
+    game.handle('move', {'pos': 112})
+    frames, since = [], 0
+    while True:
+        r = game.handle('search', {'since': since})
+        assert r['moves'] == 1 and r['total'] == 32
+        frames += r['frames']
+        since = len(frames)
+        if r['done']:
+            break
+    assert frames and frames[-1]['simulations'] == 32
+    json.dumps(frames)
+    status = game.handle('agent', {})  # plays the watched search
+    assert status['moves'][-1] in [line['pos'] for line in frames[-1]['lines']]
+    game.handle('search', {})  # a new search for the new position...
+    game.handle('back', {})  # ...is stopped by a change of position
+    assert game.job is None
