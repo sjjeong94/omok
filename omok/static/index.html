@@ -33,14 +33,19 @@
     flex-wrap: wrap;
     justify-content: center;
   }
-  canvas {
-    width: min(92vw, 80vh, 760px);
+  .board-col { width: min(92vw, 80vh, 760px); }
+  main.with-graph .board-col { width: min(92vw, calc(80vh - 140px), 760px); }
+  #board {
+    display: block;
+    width: 100%;
     aspect-ratio: 1;
     border-radius: 6px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, .5);
     cursor: pointer;
     touch-action: manipulation;
   }
+  #graph { display: block; width: 100%; height: 110px; margin-top: 12px; border-radius: 6px; background: var(--panel); }
+  .graph-info { min-height: 1.4em; margin-top: 4px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   aside {
     width: 240px;
     background: var(--panel);
@@ -106,7 +111,13 @@
 </head>
 <body>
 <main>
-  <canvas id="board" width="760" height="760"></canvas>
+  <div class="board-col">
+    <canvas id="board" width="760" height="760"></canvas>
+    <div id="graph-wrap" hidden>
+      <canvas id="graph"></canvas>
+      <div class="graph-info" id="graph-info"></div>
+    </div>
+  </div>
   <aside>
     <h1 id="title">OMOK</h1>
     <dl class="status">
@@ -122,6 +133,7 @@
     <label><input type="checkbox" id="auto"> AI replies automatically</label>
     <label><input type="checkbox" id="numbers" checked> Show move numbers</label>
     <label><input type="checkbox" id="marks" checked> Show forbidden moves</label>
+    <label><input type="checkbox" id="graph-box"> Show win-rate graph <kbd>G</kbd></label>
     <label><input type="checkbox" id="analysis"> Show AI analysis <kbd>P</kbd></label>
     <div id="analysis-panel" hidden>
       <select id="layer">
@@ -173,6 +185,9 @@ const pathsBox = document.getElementById('paths');
 const frameSlider = document.getElementById('frame');
 const playBtn = document.getElementById('play');
 const chart = document.getElementById('chart');
+const graphBox = document.getElementById('graph-box');
+const graph = document.getElementById('graph');
+let graphHover = -1;  // the position hovered in the win-rate graph
 let game = null;
 let hover = -1;
 let focus = -1;  // the candidate move hovered in the analysis table
@@ -193,7 +208,7 @@ async function api(action, body) {
   const res = await fetch('/api/' + action, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({analysis: analysisBox.checked && !liveMode(), ...body}),
+    body: JSON.stringify({analysis: analysisBox.checked && !liveMode(), graph: graphBox.checked, ...body}),
   });
   return res.json();
 }
@@ -406,6 +421,80 @@ function drawPaths(paths) {
   });
 }
 
+const GRAPH_PAD = 8;
+const blackShare = (value, player) => player === 1 ? (1 + value) / 2 : (1 - value) / 2;
+
+// Black's winning chances over the game: the network's estimate of every position (filled dark where Black
+// leads, light where White does) and, as dots, the value of each search the AI ran.
+function drawGraph() {
+  const on = graphBox.checked && !!game.graph && !!game.win_rates;
+  document.getElementById('graph-wrap').hidden = !on;
+  document.querySelector('main').classList.toggle('with-graph', on);
+  if (!on) return;
+  const {network} = game.win_rates;
+  const search = game.win_rates.search.slice();
+  const last = network.length - 1;
+  const a = game.analysis;  // the current position's search as shown, also while it runs
+  if (a && a.visits && !game.done) search[last] = blackShare(a.value, game.player);
+
+  // draw in CSS pixels on a canvas of the device's resolution
+  const dpr = window.devicePixelRatio || 1, w = graph.clientWidth, h = graph.clientHeight;
+  if (graph.width !== Math.round(w * dpr) || graph.height !== Math.round(h * dpr)) {
+    graph.width = Math.round(w * dpr);
+    graph.height = Math.round(h * dpr);
+  }
+  const g = graph.getContext('2d'), n = Math.max(last, 30);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const x = i => GRAPH_PAD + (w - 2 * GRAPH_PAD) * i / n;
+  const y = v => GRAPH_PAD + (h - 2 * GRAPH_PAD) * (1 - v);
+  g.clearRect(0, 0, w, h);
+  const area = () => {
+    g.beginPath();
+    g.moveTo(x(0), y(0.5));
+    network.forEach((v, i) => g.lineTo(x(i), y(v)));
+    g.lineTo(x(last), y(0.5));
+    g.closePath();
+  };
+  for (const [top, bottom, color] of [[0, y(0.5), 'rgba(0, 0, 0, 0.6)'], [y(0.5), h, 'rgba(240, 240, 240, 0.8)']]) {
+    g.save();
+    g.beginPath(); g.rect(0, top, w, bottom - top); g.clip();
+    area(); g.fillStyle = color; g.fill();
+    g.restore();
+  }
+  g.strokeStyle = '#5c6068';
+  g.lineWidth = 1;
+  g.setLineDash([4, 4]);
+  g.beginPath(); g.moveTo(x(0), y(0.5)); g.lineTo(w - GRAPH_PAD, y(0.5)); g.stroke();
+  g.setLineDash([]);
+  g.fillStyle = '#9a9ea5';
+  g.font = '11px system-ui, sans-serif';
+  g.textAlign = 'right';
+  g.textBaseline = 'top'; g.fillText('Black', w - GRAPH_PAD, GRAPH_PAD);
+  g.textBaseline = 'bottom'; g.fillText('White', w - GRAPH_PAD, h - GRAPH_PAD);
+
+  g.strokeStyle = '#9a9ea5';
+  g.lineWidth = 1.5;
+  g.beginPath();
+  network.forEach((v, i) => (i ? g.lineTo : g.moveTo).call(g, x(i), y(v)));
+  g.stroke();
+  search.forEach((v, i) => {
+    if (v === null) return;
+    g.fillStyle = '#3ddc84';
+    g.strokeStyle = '#1d1f21';
+    g.lineWidth = 1.5;
+    g.beginPath(); g.arc(x(i), y(v), 4, 0, Math.PI * 2); g.fill(); g.stroke();
+  });
+
+  const at = graphHover >= 0 ? Math.min(graphHover, last) : last;
+  g.strokeStyle = 'rgba(230, 230, 230, 0.6)';
+  g.lineWidth = 1;
+  g.beginPath(); g.moveTo(x(at), GRAPH_PAD); g.lineTo(x(at), h - GRAPH_PAD); g.stroke();
+  const where = at === 0 ? 'Start' : `Move ${at} (${coord(game.moves[at - 1])})`;
+  const result = game.done && at === last;
+  document.getElementById('graph-info').textContent = `${where} · ${result ? 'result' : 'network'}: Black ${pct(network[at])}`
+    + (search[at] !== null ? ` · search: Black ${pct(search[at])}` : '');
+}
+
 const CHART_COLORS = ['#3ddc84', '#4ea1ff', '#ffb74d', '#ef6fa0'];
 const CHART_PAD = {left: 56, right: 8, top: 10, bottom: 10};
 
@@ -597,6 +686,14 @@ function render() {
     ctx.stroke();
   }
 
+  if (graphHover > 0 && graphHover <= moves.length) {
+    const pos = moves[graphHover - 1];
+    ctx.strokeStyle = '#3ddc84';
+    ctx.lineWidth = 4;
+    circle(pos, CELL * 0.5);
+    ctx.stroke();
+  }
+
   const line = shownLine();
   if (!over && analysisBox.checked && game.analysis) {
     drawAnalysis(game.analysis, new Set(line ? line.pv : []));
@@ -630,7 +727,9 @@ function render() {
   document.getElementById('agent-btn').disabled = !game.agent || over || thinking;
   autoBox.disabled = !game.agent;
   analysisBox.disabled = !game.agent;
+  graphBox.disabled = !game.graph;
   renderAnalysis(line);
+  drawGraph();
   document.getElementById('version').textContent = 'version ' + game.version;
 }
 
@@ -676,6 +775,16 @@ function analysisChanged() {
 analysisBox.addEventListener('change', analysisChanged);
 liveBox.addEventListener('change', analysisChanged);
 pathsBox.addEventListener('change', render);
+graphBox.addEventListener('change', () => graphBox.checked ? send('state') : render());
+graph.addEventListener('mousemove', e => {
+  if (!game || !game.win_rates) return;
+  const rect = graph.getBoundingClientRect();
+  const n = Math.max(game.win_rates.network.length - 1, 30);
+  const i = Math.round((e.clientX - rect.left - GRAPH_PAD) / (rect.width - 2 * GRAPH_PAD) * n);
+  const at = Math.max(0, Math.min(game.win_rates.network.length - 1, i));
+  if (at !== graphHover) { graphHover = at; render(); }
+});
+graph.addEventListener('mouseleave', () => { graphHover = -1; render(); });
 playBtn.addEventListener('click', play);
 frameSlider.addEventListener('input', () => { stopPlay(); showFrame(+frameSlider.value); });
 document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
@@ -701,6 +810,11 @@ const keys = {' ': 'reset', a: 'agent', b: 'back', s: 'save'};
 document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const action = keys[e.key.toLowerCase()];
+  if (e.key.toLowerCase() === 'g' && game && game.graph) {
+    graphBox.checked = !graphBox.checked;
+    graphBox.dispatchEvent(new Event('change'));
+    return;
+  }
   if (e.key.toLowerCase() === 'p' && game && game.agent) {
     analysisBox.checked = !analysisBox.checked;
     analysisBox.dispatchEvent(new Event('change'));

@@ -7,6 +7,8 @@ import numpy as np
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from omok import Omok, Connect6
+from omok.alphazero import position_key
+from omok.env import PLAYER_BLACK, PLAYER_WHITE
 from omok.version import VERSION
 
 
@@ -43,6 +45,7 @@ class OmokGame:
         self.agent = agent
         self.lock = threading.Lock()
         self.job = None  # the live search being watched, if any
+        self.values = {}  # position key -> the network's value, for the player to move
 
     def can_watch(self):
         return getattr(self.agent, 'simulations', 0) > 0 and hasattr(self.agent, 'watch')
@@ -71,7 +74,7 @@ class OmokGame:
         if self.job is not None:
             self.job.thread.join()
 
-    def get_status(self, probs=False, analysis=False):
+    def get_status(self, probs=False, analysis=False, graph=False):
         status = {
             'state': self.env.get_state().reshape(-1).tolist(),
             'player': self.env.get_player(),
@@ -85,6 +88,7 @@ class OmokGame:
             'rule': getattr(self.env, 'rule', None),
             'agent': self.agent is not None,
             'watch': self.can_watch(),
+            'graph': hasattr(self.agent, 'get_values'),
             'version': VERSION,
         }
         if probs and self.agent is not None and not self.env.is_done():
@@ -92,7 +96,38 @@ class OmokGame:
                 self.env.get_state(), self.env.get_player()).round(4).tolist()
         if analysis and self.agent is not None and not self.env.is_done():
             status['analysis'] = self.get_analysis()
+        if graph and hasattr(self.agent, 'get_values'):
+            status['win_rates'] = self.get_win_rates()
         return status
+
+    def get_win_rates(self):
+        """Black's winning chances in each position of the game (index i: after i moves), in [0, 1]:
+        'network', the network's estimate (or the result, once the game is over), and 'search', the value of the
+        agent's search of the position (None where it did not search)."""
+        env, positions = self.env.clone(), []
+        while True:
+            positions.append((env.get_state().copy(), env.get_player(), env.is_done(), env.get_winner()))
+            if not env.get_move_history():
+                break
+            env.move_back()
+        positions.reverse()
+        new = [(state, player) for state, player, done, _ in positions
+               if not done and position_key(state, player) not in self.values]
+        self.values.update(zip((position_key(*p) for p in new), self.agent.get_values(new)))
+
+        def black(value, player):  # a value for the player to move, as Black's winning chance
+            return round((1 + value) / 2 if player == PLAYER_BLACK else (1 - value) / 2, 4)
+
+        network, search = [], []
+        for state, player, done, winner in positions:
+            if done:
+                network.append({PLAYER_BLACK: 1.0, PLAYER_WHITE: 0.0}.get(winner, 0.5))
+                search.append(None)
+                continue
+            network.append(black(self.values[position_key(state, player)], player))
+            value = self.agent.get_search_value(state, player) if hasattr(self.agent, 'get_search_value') else None
+            search.append(None if value is None else black(value, player))
+        return {'network': network, 'search': search}
 
     def get_analysis(self):
         state, player = self.env.get_state(), self.env.get_player()
@@ -144,7 +179,7 @@ class OmokGame:
                 return {'file': self.save_log()}
             else:
                 return None
-            return self.get_status(probs=body.get('probs'), analysis=body.get('analysis'))
+            return self.get_status(probs=body.get('probs'), analysis=body.get('analysis'), graph=body.get('graph'))
 
     def make_handler(self):
         game = self

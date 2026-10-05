@@ -176,3 +176,32 @@ def test_web_ui_live_search():
     game.handle('search', {})  # a new search for the new position...
     game.handle('back', {})  # ...is stopped by a change of position
     assert game.job is None
+
+
+def test_get_values():
+    a = agent()
+    envs = [position([]), position([112]), position([112, 113])]
+    values = a.get_values([(env.get_state(), env.get_player()) for env in envs])
+    for env, v in zip(envs, values):
+        assert -1 <= v <= 1
+        assert abs(v - a.network_eval(env)[1]) < 1e-5  # the same as one position at a time
+
+
+def test_web_ui_win_rates():
+    a = agent(simulations=16)
+    game = omok.OmokGame(agent=a, rule='renju')
+    status = game.handle('move', {'pos': 112, 'graph': True})
+    assert len(status['win_rates']['network']) == 2 and status['win_rates']['search'] == [None, None]
+    status = game.handle('agent', {'graph': True})  # searched the position after move 1
+    rates = status['win_rates']
+    assert len(rates['network']) == 3 and all(0 <= v <= 1 for v in rates['network'])
+    assert rates['search'][0] is None and 0 <= rates['search'][1] <= 1 and rates['search'][2] is None
+    # Black's chance from the search's value for White (the player to move after move 1)
+    value = a.get_search_value(position([112]).get_state(), 2)
+    assert abs(rates['search'][1] - (1 - value) / 2) < 1e-4
+    # a finished game ends at its result
+    game = omok.OmokGame(agent=a, rule='freestyle')
+    for pos in [0, 15, 1, 16, 2, 17, 3, 18, 4]:
+        game.move(pos)
+    rates = game.get_win_rates()
+    assert len(rates['network']) == 10 and rates['network'][-1] == 1.0

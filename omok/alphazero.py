@@ -75,6 +75,7 @@ class AlphaZeroAgent:
                           for code in range(8)])
         self.perms, self.inverse = perms, np.argsort(perms, axis=1)
         self._cache = (None, None)  # (position key, root of its search)
+        self.search_values = {}  # position key -> value of its last finished search, for the player to move
 
     # ------------------------------------------------------------------ network
 
@@ -162,10 +163,30 @@ class AlphaZeroAgent:
         return root
 
     def root(self, state, player):
-        key = (np.asarray(state, np.uint8).tobytes(), int(player))
+        key = position_key(state, player)
         if self._cache[0] != key:
-            self._cache = key, self.search(env_from_state(state, player, self.rule))
+            self.keep(key, self.search(env_from_state(state, player, self.rule)))
         return self._cache[1]
+
+    def keep(self, key, root):
+        self._cache = key, root
+        self.search_values[key] = float(root.w.sum() / root.n.sum())
+
+    def get_search_value(self, state, player):
+        """The value (for `player`) the last finished search of this position found, or None if not searched."""
+        return self.search_values.get(position_key(state, player))
+
+    def get_values(self, positions, batch=64):
+        """The network's values (for the player to move, in [-1, 1], averaged over the 8 symmetries) of
+        `positions`, a list of (state, player) of unfinished games."""
+        values = []
+        for k in range(0, len(positions), batch):
+            envs = [env_from_state(state, player, self.rule) for state, player in positions[k:k + batch]]
+            obs = np.repeat(np.stack([env.get_observation() for env in envs]), 8, 0)
+            masks = np.repeat(np.stack([env.get_legal_mask() for env in envs]), 8, 0)
+            _, v = self.evaluate(obs, masks, np.tile(np.arange(8), len(envs)))
+            values.extend(np.asarray(v).reshape(len(envs), 8).mean(1).tolist())
+        return values
 
     def watch(self, state, player, on_frame, lines=10, depth=10):
         """Search the position afresh, calling `on_frame(frame)` after each batch of simulations with the search
@@ -176,7 +197,7 @@ class AlphaZeroAgent:
                            lambda root, paths: on_frame({**analysis_of(root, lines, depth), 'paths': paths}))
         done = root.visits >= self.simulations
         if done:
-            self._cache = (np.asarray(state, np.uint8).tobytes(), int(player)), root
+            self.keep(position_key(state, player), root)
         return done
 
     # ------------------------------------------------------------------ OmokAgent interface
@@ -220,6 +241,10 @@ class AlphaZeroAgent:
                           for m in top if prior[m] > 0],
             }
         return analysis_of(self.root(state, player), lines, depth)
+
+
+def position_key(state, player):
+    return np.asarray(state, np.uint8).tobytes(), int(player)
 
 
 def analysis_of(root, lines=10, depth=10):

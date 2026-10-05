@@ -40,6 +40,8 @@ the best line it expects (hover a move on the board or in the candidate table to
 With `Watch the search live` (on by default) the search runs in the background and the board updates after every batch of
 simulations, so you see the AI think before it moves. Afterwards, replay or scrub the search with the slider, follow the
 top moves' visit shares or win rates in the chart, and turn on `Show search paths` to see where each batch went.
+Turn on `Show win-rate graph` (shortcut `G`) for Black's winning chances over the game under the board: the network's
+estimate of every position, with a dot wherever the AI searched it; hover the graph to find a move on the board.
 
 ```bash
 $ python -m omok --simulations 0            # the AlphaZero network alone, no search (default: 200 simulations per move)
@@ -137,6 +139,7 @@ with an optional PUCT search (numpy only). Over 100 games from random 4-move ope
 `get_probs` returns the network's probabilities averaged over the 8 symmetries (`simulations=0`) or the search's visit shares.
 `get_analysis` returns what the web UI's analysis shows: the prior, visit shares and win rate (Q) of each move, the position's value, and the candidate moves with their principal variations;
 `watch(state, player, on_frame)` runs a fresh search and calls `on_frame` with that analysis after every batch of simulations.
+`get_values(positions)` returns the network's values of many positions at once, and `get_search_value(state, player)` what the last search of a position found.
 
 Reinforcement Learning
 ```python
